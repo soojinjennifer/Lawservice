@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>내편문서 — AI 법률 문서 자동화 서비스</title>
+  <meta name="viewport" content="width=1440">
+  <link href="https://fonts.googleapis.com/css2?family=Nanum+Myeongjo:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body class="brand-official">
+  <div id="root"></div>
+
+  <!-- Supabase 설정 주입 (서버가 .env에서 읽어 전달, tojson으로 안전 escaping) -->
+  <script>
+    // 값이 없으면 빈 객체 → supabase_client.js의 방어 코드가 처리
+    window.__SUPABASE__ = {
+      url: {{ supabase_url | default('', true) | tojson }},
+      anonKey: {{ supabase_anon_key | default('', true) | tojson }}
+    };
+  </script>
+
+  <!-- React + JSX (CDN) -->
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
+
+  <!-- Supabase JS 클라이언트 (CDN, 일반 스크립트 — 트랜스파일 불필요) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <!-- ── 1. 기반 (의존성 없음) ── -->
+  <script type="text/babel" src="/static/js/icons.js"></script>
+  <script type="text/babel" src="/static/js/components.js"></script>
+  <script type="text/babel" src="/static/js/api.js"></script>
+  <script type="text/babel" src="/static/js/supabase_client.js"></script>
+  <script type="text/babel" src="/static/js/auth_store.js"></script>
+
+  <!-- ── 2. 공통 UI 컴포넌트 ── -->
+  <script type="text/babel" src="/static/js/ui/Button.js"></script>
+  <script type="text/babel" src="/static/js/ui/Input.js"></script>
+  <script type="text/babel" src="/static/js/ui/Card.js"></script>
+  <script type="text/babel" src="/static/js/ui/Alert.js"></script>
+  <script type="text/babel" src="/static/js/ui/Badge.js"></script>
+  <script type="text/babel" src="/static/js/ui/DocChip.js"></script>
+  <script type="text/babel" src="/static/js/ui/SearchFilterBar.js"></script>
+  <script type="text/babel" src="/static/js/ui/YesNoToggle.js"></script>
+  <script type="text/babel" src="/static/js/ui/Toast.js"></script>
+  <script type="text/babel" src="/static/js/ui/Modal.js"></script>
+  <script type="text/babel" src="/static/js/ui/EmpathyBubble.js"></script>
+  <script type="text/babel" src="/static/js/ui/AuthWidgets.js"></script>
+  <script type="text/babel" src="/static/js/ui/Accordion.js"></script>
+
+  <!-- ── 3. 문서 전용 컴포넌트 ── -->
+  <script type="text/babel" src="/static/js/document/StepIndicator.js"></script>
+  <script type="text/babel" src="/static/js/document/DocumentTypeCard.js"></script>
+  <script type="text/babel" src="/static/js/document/FormSection.js"></script>
+  <script type="text/babel" src="/static/js/document/DocumentPreview.js"></script>
+  <script type="text/babel" src="/static/js/document/EvidenceUploader.js"></script>
+  <script type="text/babel" src="/static/js/document/OpponentDocAnalysis.js"></script>
+
+  <!-- ── 4. 레이아웃 · 결제 컴포넌트 ── -->
+  <script type="text/babel" src="/static/js/layout/AuthSplitLayout.js"></script>
+  <script type="text/babel" src="/static/js/layout/SiteFooter.js"></script>
+  <script type="text/babel" src="/static/js/layout/SubTabBar.js"></script>
+  <script type="text/babel" src="/static/js/payment/PaymentSummaryCard.js"></script>
+
+  <!-- ── 5. 화면 컴포넌트 ── -->
+  <script type="text/babel" src="/static/js/login_screen.js"></script>
+  <script type="text/babel" src="/static/js/auth_screen.js"></script>
+  <script type="text/babel" src="/static/js/home_screen.js"></script>
+  <script type="text/babel" src="/static/js/help_screen.js"></script>
+  <script type="text/babel" src="/static/js/create_screen.js"></script>
+  <script type="text/babel" src="/static/js/mydocs_screen.js"></script>
+  <script type="text/babel" src="/static/js/subscription_screen.js"></script>
+  <script type="text/babel" src="/static/js/dashboard/CaseProgressCard.js"></script>
+  <script type="text/babel" src="/static/js/dashboard_screen.js"></script>
+
+  <!-- ── 6. SPA 라우터 (항상 마지막) ── -->
+  <script type="text/babel" src="/static/js/prototype.js"></script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+.env.*
+
+# API 키 및 민감 정보
+클로드 API 키.txt
+
+# macOS
+.DS_Store

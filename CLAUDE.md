@@ -1,0 +1,351 @@
+# 내편문서 — 공통 컴포넌트 설계 규칙 (v1.2 기준)
+> 출처: AI_법률문서_자동화_서비스_PRD_v1.2 (수정본, 서비스명 "내편문서")
+> 목적: Figma Component Set / Instance & Claude Code 재사용 컴포넌트 기준 정의
+> 표기: 🆕 = 2차 PRD에서 새로 추가되는 컴포넌트 · ♻️ = 1차 MVP 자산 승격
+> 상태: **승인 완료 · 디자인 적용본 반영(내편문서 v1.2)**
+
+---
+
+## 0. 이번 수정본(v1.2) 반영 핵심 델타
+| 항목 | 1차 MVP | 2차 PRD v1.2 |
+|---|---|---|
+| 문서 종류 | 5종(내용증명·준비서면·상대방 반박문·항소이유서·계약서) | **활성 3종**: 내용증명 · 준비서면 · 상대방 반박문 / **v2.0 예정**: 항소이유서 / **Coming Soon**: 계약서 |
+| 요금 | 월 구독(Basic/Standard/Pro) | **건별 결제**: 내용증명 9,900(첫 1건 무료) · 준비서면 49,000 · 반박서 69,000 · 항소이유서 99,000(v2.0) |
+| 무료 체험 | Basic 2건 등 | **내용증명 1건 무료(워터마크) + 대화형 수정 3회**, 초과 시 건별 결제 전환 |
+| 신규 기능 | — | 증거 업로드(AI 날짜추출), 주장-증거 매핑, 상대방 분석·반박 목록, 위험문장검사 버튼, 홈 대시보드 |
+
+## 1. 작업 기본 원칙
+
+- 기존 1차 MVP 기능을 함부로 삭제하지 않는다.
+- 2차 PRD 변경사항만 우선 반영한다.
+- 전체를 새로 갈아엎지 말고 기존 구조를 최대한 유지한다.
+- 코드를 수정하기 전에는 먼저 변경 계획을 설명한다.
+- 한 번에 많은 파일을 수정하지 않는다.
+- 화면 하나 또는 컴포넌트 하나 단위로 작게 작업한다.
+
+## 2. 컴포넌트 원칙
+
+- 페이지 안에서 버튼, 인풋, 카드, 모달, 알림을 직접 새로 만들지 않는다.
+- 반복되는 UI는 반드시 공통 컴포넌트로 분리한다.
+- 기존 컴포넌트가 있으면 먼저 재사용한다.
+- 새 컴포넌트가 필요하면 만들기 전에 이유를 설명한다.
+- 페이지 파일은 화면 조립 역할만 한다.
+- 스타일과 로직이 반복되면 컴포넌트로 분리한다.
+
+# 3. 반드시 공통 컴포넌트로 설계해야 할 요소
+> (프롬프트 원본 목록 + 🆕 신규 요소 통합)
+
+### 기본 UI 컴포넌트
+- Button
+- TextInput
+- Textarea
+- Select
+- Checkbox
+- Radio
+- RadioCard
+- Toggle
+- Badge
+- Tooltip
+- Alert
+- Toast
+- Modal
+- Drawer
+- Tab
+- StepIndicator
+- ProgressIndicator
+- 🆕 **FileChip** — 업로드된 증거 파일 표시(파일명+추출 결과+삭제)
+- 🆕 **DocChip** — 문서 종류 라벨 칩(아이콘+문서명, `white-space:nowrap`·`width:max-content`로 줄바꿈 금지)
+- 🆕 **YesNoToggle** — 예/아니오 2분할 세그먼트 토글(대시보드 진행 문의)
+- 🆕 **Pagination** — 마이페이지 문서 목록
+
+### 서비스 전용 컴포넌트
+- DocumentTypeCard
+- DocumentFormSection
+- DocumentQuestionBlock
+- RequiredInfoNotice
+- AIGenerateButton
+- DocumentPreview
+- DocumentResultCard
+- LegalNoticeBox
+- RiskWarningBox
+- PaymentSummaryCard
+- MyDocumentListItem
+- EmptyState
+- LoadingState
+- ErrorState
+- 🆕 **EvidenceUploader** — 증거 드롭존(FR-17)
+- 🆕 **TimelineRowEditor** — 시간순 사건경위 입력 행(행 추가/삭제)
+- 🆕 **ClaimEvidenceRow** — 주장-증거 매핑 행(상태: 있음/필요/부족 + 체크박스, FR-18)
+- 🆕 **OpponentClaimItem** — 상대방 주장 1건 + 반박 초안 + 체크박스(FR-19)
+- 🆕 **RiskCheckButton** — "위험문장검사" 트리거 버튼(FR-20)
+- 🆕 **CaseProgressCard** — 대시보드 사건 진행 카드(미니 StepIndicator 포함, FR-16)
+- 🆕 **NextStepCard** — 다음 가능한 프로세스 안내 카드(FR-16)
+- 🆕 **FreeTrialBanner** — 무료 체험 1건/수정 3회 잔여 안내
+- 🆕 **PaymentModal** — 건별 결제 플로우(Modal variant=payment, FR-21)
+- 🆕 **EmpathyBubble** — 홈 공감 섹션의 좌/우 번갈아 배치되는 풀폭 pill 말풍선
+
+### 레이아웃 컴포넌트
+- Header (GNB)
+- Sidebar
+- PageLayout
+- FormLayout
+- DocumentEditorLayout
+- ResultLayout
+- MobileBottomActionBar
+- 🆕 **DashboardLayout** — 2-컬럼(좌: 사건·문서 / 우: 문의·다음단계), 홈 로그인 상태
+- 🆕 **AuthSplitLayout** — 좌 브랜드 패널 + 우 카드 (로그인/가입/비번찾기 공용)
+- 🆕 **SiteFooter** — 전 화면 공통 푸터(4컬럼 사이트맵 + 소유권 고지). 소유·운영: 주식회사 더그라운드모여(TheGroundMOYO Inc.), 카피라이트 `copyright@TheGroundMOYO`
+
+---
+
+# 4. 컴포넌트 설계 규칙
+> 프롬프트 원본 6개(Button/Input/RadioCard/DocumentPreview/Alert/Modal) + 전체 컴포넌트 variant/state/size 정의.
+> 🆕 표시된 항목이 2차 PRD에서 신규 추가된 설계 규칙입니다.
+
+### Button
+- variant: primary / secondary / ghost / danger / text
+- size: sm / md / lg
+- state: default / hover / disabled / loading
+- icon: none / left / right
+- width: hug / fill
+
+### Input (TextInput / Textarea / Select 공용 베이스)
+- type: text / number / email / phone / date
+- state: default / focused / error / disabled / readonly
+- helperText: true / false
+- required: true / false
+- leadingIcon: true / false
+
+### RadioCard
+- state: default / selected / disabled
+- layout: horizontal / vertical
+- withIcon: true / false
+- withDescription: true / false
+
+### DocumentPreview
+- mode: preview / edit / readonly
+- documentType: 내용증명 / 준비서면 / 상대방 반박문  *(항소이유서는 v2.0 추가 예정)*
+- state: loading / generated / edited / empty / error
+- action: regenerate / download / save  *(“입력값 보기” 액션 제거 — 머리표은 다시 생성만 제공)*
+
+### Checklist 🆕 (도움말 작성 체크리스트)
+- item: 클릭 토글 액션 버튼(체크 시 취소선·연한 색), 인쇄용 아닌 인터랙티브 항목
+- header: "N / 총개수 완료" badge(info)
+- 도움말 상단 액션: 이 문서 만들기 / 예시 다운로드  *(“체크리스트 인쇄” 제거)*
+
+### Alert
+- type: info / warning / error / success
+- closable: true / false
+- actionButton: true / false
+
+### Modal
+- type: confirm / guide / warning / payment / document
+- size: sm / md / lg / fullscreen
+- action: single / double / custom
+- 🆕 **PurchaseConfirmModal**(type=confirm 구현체, FR-21): 제목 "문서를 구매하시겠습니까?" + 요약표(문서 종류/단가/구매 수량/결제 금액) + 환불 안내 + [취소]/[결제하고 문서 만들기]. 트리거: 요금제 컬러드 "문서 구매하기" 버튼(Plan.onBuy)
+
+### Toast 🆕
+- type: success / info / error
+- position: top-right (기본, 임시저장 알림 2.5초 자동 소멸)
+- duration: 2500ms / persistent
+- action: none / undo
+
+### Tab 🆕
+- variant: line / pill
+- state: default / active / disabled
+- 사용: 마이페이지 서브탭, 문서 생성 프로세스(StepIndicator와 구분)
+
+### StepIndicator 🆕
+- orientation: horizontal / vertical
+- state(스텝별): todo / current / done
+- size: md(생성 상단) / sm(대시보드 카드 내부)
+- clickable: true(이전 단계 복귀) / false
+
+### Badge 🆕
+- variant: info / success / warning / danger / neutral
+- 용도: 문서 상태(작성중/초안생성됨/수정중/저장완료), "v2.0 예정", "오픈 예정", "무료 체험"
+
+### DocumentTypeCard 🆕
+- variant(documentType): notice / brief / rebuttal / appeal  *(소견서·계약서 제외)*
+- state: default / selected / disabled
+- availability: active(내용증명·준비서면·반박문) / v2-planned(항소이유서) / coming-soon(계약서)
+- withPrice: true(건별 가격 노출) / false
+- 가격: 내용증명 19,900 · 준비서면 49,000 · 반박서 69,000 · 항소이유서 99,000(v2.0)
+- 사용: 홈 문서 소개, 문서 생성 1단계
+
+### DocumentFormSection 🆕
+- kind: sender / receiver / case-id / timeline / body / demand / opponent-analysis
+- required: true / false
+- state: default / error
+- collapsible: true / false
+
+### EvidenceUploader 🆕 (FR-17)
+- state: empty / uploading / done / error
+- accept: image / pdf / text-paste
+- feature: ai-date-extract(추출 결과 칩 표시) on/off
+- multiple: true
+
+### ClaimEvidenceRow 🆕 (FR-18)
+- evidenceState: 있음 / 필요 / 일부부족
+- checked: true / false
+- action: add-evidence
+
+### OpponentClaimItem 🆕 (FR-19)
+- riskLevel: normal / caution(인정 주의)
+- checked: true / false (반박 반영 여부)
+- layout: claim + rebuttal-draft
+- ⚠️ 표시 조건: **분석하기 실행 후에만 노출**(아래 OpponentDocAnalysis 참조)
+
+### OpponentDocAnalysis 🆕 (FR-19, 반박문 전용 섹션)
+- 구성(한 줄): [상대방에게 받은 문서 종류 select] + [상대방 문서 업로드 입력폼 + 파일 선택 버튼]
+- 하단(한 줄): [분석하기] 버튼 — 파일 업로드 전 disabled
+- 결과(분석하기 후): OpponentClaimItem 리스트 + 🆕 **RebuttalSuggestionTextarea**
+- state: idle / file-ready / analyzing / done
+
+### RebuttalSuggestionTextarea 🆕
+- 제목: "AI가 추천하는 반박 주장 내용" (sparkle 아이콘)
+- 선택된 반박 항목 기반 AI 정리 초안, editable
+- 위치: OpponentDocAnalysis 결과 하단
+
+### RiskWarningBox / RiskCheckButton 🆕 (FR-20)
+- RiskCheckButton: state = idle / checking / done, 위치 = 3단계 수정 영역
+- RiskWarningBox: severity = info / warning, item = {원문, 사유, 수정제안}
+
+### PaymentSummaryCard / PaymentModal 🆕 (FR-21)
+- PaymentSummaryCard: docType, price, includedFeatures[], cta("문서 구매하기"), onBuy
+- PaymentModal: step = select / pay / success, method = card / kakao / etc.
+- 구매 확인은 PurchaseConfirmModal(Modal type=confirm)로 선행 → 결제 흐름 진입
+
+### CaseProgressCard 🆕 (FR-16)
+- status: 작성중 / 초안생성됨 / 수정중 / 저장완료 / 발송완료 / 분석중
+- step: 1~3 (미니 StepIndicator)
+- action: 이어서 진행
+
+### NextStepCard 🆕 (FR-16)
+- recommend: 재내용증명 / 반박문 / 소장·준비서면
+- emphasis: default / recommended
+
+### MyDocumentListItem ♻️
+- status: saved / draft / in_review / deleted
+- action: 보기 / 재다운로드 / 이어서 수정 / 삭제
+
+### LegalNoticeBox ♻️
+- variant: full / compact
+- 전 화면 하단 "참고용 초안, 법적 효력 미보장" 고지
+
+### EmptyState / LoadingState / ErrorState 🆕
+- context: list / preview / payment / upload
+- ErrorState.action: retry
+
+### YesNoToggle 🆕
+- options: 예 / 아니오 (2분할 세그먼트)
+- state: yes / no / none(미선택)
+- align: right (질문 행 우측 배치)
+- 사용: 대시보드 "지금 상황을 알려주세요" 각 질문
+
+### EmpathyBubble 🆕
+- side: left / right (좌→우→좌 번갈아 배치, 대화 흐름)
+- shape: pill (borderRadius 40), 풀폭 maxWidth ≈76%, padding 22px 36px
+- typo: 18px / weight 700 / letterSpacing -0.02em / lineHeight 1.45
+- tone: translucent-on-navy (bg rgba(255,255,255,0.10), border rgba(255,255,255,0.16), shadow 0 6px 20px)
+- text-align: 말풍선 방향과 동일(left면 좌정렬, right면 우정렬)
+- 사용: 홈 공감 섹션 대화형 문구 (섹션 배경: navy 그라데이션)
+
+### DocChip 🆕
+- content: icon + 문서명
+- rule: white-space:nowrap · width:max-content · 좌우 패딩 12px (라벨 줄바꿈 금지)
+- 사용: 마이페이지·대시보드 문서 행
+
+### SiteFooter 🆕
+- 구성: 4컬럼(브랜드 소개 + 서비스/고객지원/회사) + 하단 고지 바
+- 소유·개발: 주식회사 더그라운드모여 (TheGroundMOYO Inc.) · 카피라이트 `copyright@TheGroundMOYO`
+- 적용: 전 화면(홈·대시보드·문서생성·마이페이지·결제내역·도움말·FAQ)
+
+### Header(GNB) ♻️
+- variant: guest / authed
+- guest: 로그인 + 무료로 시작하기 버튼
+- authed: 크레딧 칩("누적 N건 / ₩·월 결제액") + 알림/도움말 + **"안녕하세요, OOO님" + 로그아웃 버튼** (아바타·드롭다운 제거)
+
+### MobileBottomActionBar 🆕
+- 모바일에서 주요 CTA(초안 생성/저장/결제) 화면 하단 고정
+
+---
+# 6. Figma Component Mapping Table (요약, v1.2)
+| 화면 영역 | UI 요소 | Figma 컴포넌트명 | Variant | State | Instance |
+|---|---|---|---|---|---|
+| 전 화면 | 주요 CTA | Button | primary/lg | default | yes |
+| 문서생성1 | 종류 선택 | DocumentTypeCard | rebuttal | selected | yes |
+| 문서생성1 | 증거 업로드 | EvidenceUploader | image+pdf | done | yes |
+| 문서생성1(반박) | 상대문서 업로드·분석 | OpponentDocAnalysis | file-ready→done | yes |
+| 문서생성1(반박) | 추천 반박 내용 | RebuttalSuggestionTextarea | done | yes |
+| 문서생성1 | 상대 주장·반박 | OpponentClaimItem | caution | checked | yes |
+| 문서생성3 | 위험문장검사 | RiskCheckButton / RiskWarningBox | warning | done | yes |
+| 2·3단계 | 미리보기 | DocumentPreview | 내용증명 | generated | yes |
+| 홈/요금제 | 건별 결제 | PaymentSummaryCard | per-document | — | yes |
+| 결제 | 결제 플로우 | Modal | payment | double | yes |
+| 요금제 | 구매 확인 | PurchaseConfirmModal | confirm | double | yes |
+| 도움말 | 작성 체크리스트 | Checklist | toggle | checked | yes |
+| 대시보드 | 사건 진행 | CaseProgressCard | 분석중 | — | yes |
+| 대시보드 | 다음 단계 | NextStepCard | recommended | — | yes |
+| 대시보드 | 진행 문의 | DocumentQuestionBlock | checkbox-list | — | yes |
+| 전 화면 | 고지 | LegalNoticeBox | compact | — | yes |
+
+---
+
+# 7. Code Component Mapping Table (요약, v1.2)
+| Figma 컴포넌트 | React 경로 | Props | 사용 화면 |
+|---|---|---|---|
+| Button | ui/Button | variant,size,icon,loading,width | 전체 |
+| TextInput/Textarea/Select | ui/* | type,state,helperText,required,leadingIcon | 폼 |
+| Toast | ui/Toast | type,duration,action | 임시저장 등 |
+| Modal | ui/Modal | type,size,action | 결제·확인 |
+| DocumentTypeCard | document/DocumentTypeCard | documentType,availability,withPrice,selected | 홈·생성1 |
+| EvidenceUploader | document/EvidenceUploader | files,onUpload,onRemove,aiExtract | 생성1 |
+| OpponentClaimItem | document/OpponentClaimItem | claim,rebuttal,riskLevel,checked | 생성1(반박) |
+| RiskCheckButton/RiskWarningBox | document/Risk* | items,state | 생성3 |
+| DocumentPreview | document/DocumentPreview | documentType,mode,content,status,actions | 2·3·마이 |
+| PaymentSummaryCard/PaymentModal | payment/* | docType,price,features / step,method | 요금제·결제 |
+| CaseProgressCard/NextStepCard | dashboard/* | status,step / recommend | 대시보드 |
+| LegalNoticeBox/Empty/Loading/Error | feedback/* | variant,context | 전체 |
+| Header/Sidebar/*Layout | layout/* | variant,user | 전체 |
+
+---
+
+# 8. Claude Code 구현 지시문 (v1.2)
+1. 폴더: `ui / document / form / payment / dashboard / layout / feedback` — 위 매핑표 경로 준수.
+2. 토큰: Fluent 2 변수 + 브랜드 오버라이드(`--brand-rest:#2D4DAA`, 배경 `#E9F6FF→#E1E3E0`)만. 화면별 색/폰트/간격 임의 지정 금지.
+3. 문서 종류는 데이터(`DOC_TYPES`)로만 관리: active 3종(내용증명·준비서면·상대방 반박문) + v2-planned 1종(항소이유서) + coming-soon 1종(계약서). UI는 availability variant로 분기.
+4. 결제·모달·빈/로딩/에러·미리보기·증거 업로드는 반드시 공통 컴포넌트 인스턴스 사용. 신규 스타일 생성 금지.
+5. PRD v1.2에 없는 기능 추가 금지(소견서는 목록에서 완전 제외, 항소이유서·계약서/소장은 비활성 또는 "예정" 표기까지만).
+
+
+## 5. 금지사항
+
+- 페이지마다 새로운 버튼 스타일을 만들지 않는다.
+- 같은 역할의 컴포넌트를 이름만 다르게 중복 생성하지 않는다.
+- inline style을 남발하지 않는다.
+- 기존 라우팅 구조를 확인하지 않고 새 라우트를 만들지 않는다.
+- 기존 동작을 확인하지 않고 파일을 삭제하지 않는다.
+- Figma/Claude Design에 없는 UI 패턴을 임의로 추가하지 않는다.
+
+## 6. 수정 전 확인 절차
+
+코드를 수정하기 전에 항상 아래를 먼저 확인한다.
+
+1. 현재 파일 구조
+2. 기존 컴포넌트 존재 여부
+3. 수정해야 할 파일 목록
+4. 새로 만들 컴포넌트가 정말 필요한지
+5. 기존 기능에 미치는 영향
+6. 작업 후 테스트 방법
+
+## 7. 수정 후 보고 형식
+
+작업 후에는 아래 형식으로 요약한다.
+
+- 변경한 파일
+- 새로 만든 컴포넌트
+- 재사용한 컴포넌트
+- 삭제하거나 통합한 코드
+- 2차 PRD 반영 내용
+- 확인해야 할 테스트 항목
