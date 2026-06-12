@@ -136,6 +136,59 @@ Supabase Auth 연결 상태:
 
 ---
 
+## 컴포넌트 정리 작업 (Phase 1~3) 완료 — 2026-06-12
+
+### 배경
+
+Figma 컴포넌트 시스템 연결을 위해 화면 안에 직접 작성된 반복 UI를
+공통 컴포넌트 파일로 분리하는 작업을 진행했다.
+분석 결과와 단계별 계획은 `ComponentsPlan.md`에 정리되어 있다.
+
+### 완료된 작업
+
+| Phase | 컴포넌트 | 파일 | 내용 |
+|---|---|---|---|
+| Phase 1 | `YesNoToggle` | `ui/YesNoToggle.js` | `dashboard_screen.js` 내부 함수 분리 |
+| Phase 1 | `CaseProgressCard` + `MiniSteps` | `dashboard/CaseProgressCard.js` | `dashboard_screen.js` 내부 함수 분리 |
+| Phase 2-A | `SubTabBar` | `layout/SubTabBar.js` | `mydocs_screen.js` + `subscription_screen.js` 중복 탭 마크업 통합 |
+| Phase 2-B | `AccordionItem` | `ui/Accordion.js` | `prototype.js` 내부 `FAQItem` 분리 |
+| Phase 3-A | `DocChip` | `ui/DocChip.js` | `doc-chip` span 분리, `size="md/sm/ssm"` 지원 |
+| Phase 3-B | `SearchFilterBar` | `ui/SearchFilterBar.js` | `mydocs_screen.js` 검색·필터 툴바 분리 |
+
+### DocChip 사이즈 규격
+
+| size | height | fontSize | 사용처 |
+|---|---|---|---|
+| `md` | 28px (CSS 기본) | 12px | create_screen active 칩 |
+| `sm` | 24px | 11px | mydocs, subscription 목록 행 |
+| `ssm` | 20px | 11px | 카드 헤더 초소형 (CaseProgressCard용으로 예약) |
+
+### help_screen.js POST_STEPS 패널
+
+help_screen.js의 발송 단계 토글 패널은 외부 state + 4컬럼 그리드 구조로
+AccordionItem과 통합 불가 판단 → 기존 인라인 코드 유지.
+
+### Git 저장소 현황
+
+- `git init` 후 GitHub 저장소 연결: `https://github.com/soojinjennifer/Lawservice.git`
+- 총 6개 커밋 `main` 브랜치에 푸시 완료
+
+| 커밋 | 메시지 |
+|---|---|
+| `885e1f0` | chore: initial project setup |
+| `a548717` | refactor: extract dashboard components |
+| `04ffa87` | refactor: extract sub tab bar component |
+| `fef44ef` | refactor: extract accordion component |
+| `19a8164` | refactor: extract doc chip component |
+| `68ae426` | refactor: extract search filter bar component |
+
+### 다음 단계 (Phase 4)
+
+- Figma Code Connect 연결 (`data-component` attribute 추가, 컴포넌트 1:1 대응 문서화)
+- 현재 `ComponentsPlan.md`에 Phase 4 항목이 `⬜ 대기` 상태로 남아 있음
+
+---
+
 ## 다음 Claude Code 프롬프트
 
 OAuth dashboard 안착, 라우트 가드, TopNav 로그인 상태 표시까지 완료되었습니다.
