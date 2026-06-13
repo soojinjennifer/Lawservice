@@ -94,7 +94,7 @@ function StepInput({ docType, setDocType, onSubmit }) {
   const [facts,         setFacts]         = React.useState(saved?.facts   ?? "");
   const [request,       setRequest]       = React.useState(saved?.request ?? "");
   const [error,         setError]         = React.useState("");
-  const [evidenceFiles, setEvidenceFiles] = React.useState([]);
+  const [evidenceFiles, setEvidenceFiles] = React.useState(saved?.evidenceFiles ?? []);
   const [rebuttalDraft, setRebuttalDraft] = React.useState("");
 
   // 저장된 데이터가 있으면 docType도 복원
@@ -122,23 +122,60 @@ function StepInput({ docType, setDocType, onSubmit }) {
   const updateRow = (i, field, val) =>
     setTimeline(tl => tl.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
 
-  // 증거 파일 업로드 핸들러 (FR-17)
+  // 증거 파일 업로드 핸들러 (FR-17) — 실제 /api/upload_evidence 연동
   const handleEvidenceUpload = (fileList) => {
-    const newFiles = fileList.map(f => ({ name: f.name, status: "uploading", extractedDate: null }));
-    setEvidenceFiles(prev => {
-      const next = [...prev, ...newFiles];
-      // 실제 API: POST /api/upload_evidence
-      // 목업: 1초 후 "done" 상태 + 샘플 날짜 추출
-      const startIdx = prev.length;
-      setTimeout(() => {
-        setEvidenceFiles(cur => cur.map((ef, i) => {
-          if (i >= startIdx && ef.status === "uploading") {
-            return { ...ef, status: "done", extractedDate: "2026-05-15" };
+    // 낙관적으로 업로드중 칩 추가 (각 칩에 고유 id 부여)
+    const baseLen = evidenceFiles.length;
+    const pending = fileList.map((f, k) => ({
+      id: `evi-${Date.now()}-${baseLen + k}`,
+      name: f.name,
+      originalName: f.name,
+      fileType: f.type || "",
+      fileSize: f.size || 0,
+      status: "uploading",
+      evidenceNo: null,
+      savedFilename: null,
+      downloadUrl: "",
+      date: null,
+      summary: "",
+      error: "",
+    }));
+    setEvidenceFiles(prev => [...prev, ...pending]);
+
+    // 파일별 순차 업로드 (하나 실패해도 나머지 진행)
+    fileList.forEach((file, k) => {
+      const chipId = pending[k].id;
+      const seq = baseLen + k + 1; // 현재 목록 기준 순번
+      window.LawAPI.uploadEvidence({ file, docType, seq })
+        .then(data => {
+          if (!data || !data.evidenceNo || !data.savedFilename) {
+            throw new Error("증거 정보를 받지 못했습니다.");
           }
-          return ef;
-        }));
-      }, 1000);
-      return next;
+          const downloadUrl = data.downloadUrl || window.LawAPI.evidenceDownloadUrl(data.savedFilename);
+          setEvidenceFiles(cur => cur.map(ef => ef.id === chipId ? {
+            ...ef,
+            status: "done",
+            evidenceNo: data.evidenceNo,
+            originalName: data.filename || ef.originalName,
+            savedFilename: data.savedFilename,
+            downloadUrl,
+            date: data.extractedDate || null,
+            extractedDate: data.extractedDate || null, // 기존 칩 호환
+            summary: data.summary || "",
+            uploadedAt: new Date().toISOString(),
+          } : ef));
+        })
+        .catch(err => {
+          setEvidenceFiles(cur => cur.map(ef => ef.id === chipId ? {
+            ...ef, status: "error", error: err.message || "업로드 실패",
+          } : ef));
+          if (window.ToastManager) {
+            window.ToastManager.show({
+              type: "error",
+              message: `"${file.name}" 증거 파일 업로드에 실패했습니다. 잠시 후 다시 시도해 주세요.`,
+            });
+          }
+        });
     });
   };
   const handleEvidenceRemove = (i) => setEvidenceFiles(prev => prev.filter((_, idx) => idx !== i));
@@ -149,6 +186,8 @@ function StepInput({ docType, setDocType, onSubmit }) {
       docType, senderName, senderAddr, senderPhone,
       receiverName, receiverAddr, receiverPhone,
       court, caseNum, caseName, timeline, facts, request,
+      // 증거 파일도 임시 보관 (업로드 완료분만, 서버 아닌 sessionStorage)
+      evidenceFiles: evidenceFiles.filter(f => f.status === "done"),
       savedAt: new Date().toISOString(),
     };
     sessionStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(data));
@@ -170,10 +209,24 @@ function StepInput({ docType, setDocType, onSubmit }) {
     const sender   = [senderName, senderAddr, senderPhone].filter(Boolean).join(" / ");
     const receiver = [receiverName, receiverAddr, receiverPhone].filter(Boolean).join(" / ");
     const caseInfo = [court, caseNum, caseName].filter(Boolean).join(" ");
+    // 업로드 완료된 증거만 목록에 포함 (서버가 문서 하단 「입 증 방 법」에 사용)
+    const evidence_list = evidenceFiles
+      .filter(f => f.status === "done")
+      .map((item, index) => ({
+        evidenceNo: item.evidenceNo || "",
+        savedFilename: item.savedFilename || "",
+        originalName: item.originalName || "",
+        date: item.date || "",
+        summary: item.summary || "",
+        fileType: item.fileType || "",
+        downloadUrl: item.downloadUrl || "",   // 미리보기 우측 패널 다운로드용
+        seq: index + 1,
+      }));
     onSubmit({
       docType, sender, receiver, caseInfo,
       timelineEvents: timeline.filter(r => r.date || r.event).map(r => ({ time: r.date, content: r.event })),
       facts, request,
+      evidence_list,
     });
   };
 
@@ -387,29 +440,17 @@ function StepInput({ docType, setDocType, onSubmit }) {
 }
 
 // ── STEP 2: 초안 미리보기 ─────────────────────────────────────
-function StepPreview({ docType, draftText, generating, genError, onBack, onNext, onRegenerate, onDownload }) {
+function StepPreview({ docType, draftText, generating, genError, onBack, onNext, onRegenerate, onDownload, evidenceList = [] }) {
   const meta = DocTypeMeta(docType);
   const lines = (draftText || "").split("\n");
 
   return (
     <div className="create-pane-preview" style={{ minHeight: 720 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 20 }}>
-        <div>
-          <h2 className="section-title">초안 미리보기</h2>
-          <p className="muted" style={{ fontSize: 13, margin: "6px 0 0" }}>
-            <Icon name="document" size={14} color="var(--color-neutral-fg-3)" /> {meta.name} · 제목은 맑은 고딕(굵게), 본문은 바탕체로 출력됩니다.
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button className="btn btn-secondary" onClick={onRegenerate} disabled={generating}>
-            <Icon name="refresh" size={14} /> 다시 생성
-          </button>
-          {draftText && (
-            <button className="btn btn-secondary" onClick={onDownload} disabled={generating}>
-              <Icon name="download" size={14} /> .docx 받기
-            </button>
-          )}
-        </div>
+      <div style={{ marginBottom: 20 }}>
+        <h2 className="section-title">초안 미리보기</h2>
+        <p className="muted" style={{ fontSize: 13, margin: "6px 0 0" }}>
+          <Icon name="document" size={14} color="var(--color-neutral-fg-3)" /> {meta.name} · 제목은 맑은 고딕(굵게), 본문은 바탕체로 출력됩니다.
+        </p>
       </div>
 
       {generating ? (
@@ -434,37 +475,57 @@ function StepPreview({ docType, draftText, generating, genError, onBack, onNext,
           <button className="btn btn-primary" onClick={onBack}>← 입력 화면으로 돌아가기</button>
         </div>
       ) : (
-        <>
-          <div className="doc-preview" style={{ maxWidth: 800, margin: "0 auto" }}>
-            <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "inherit", margin: 0, fontSize: 14, lineHeight: 1.9 }}>
-              {draftText}
-            </pre>
-            <div className="doc-footer-note" style={{ marginTop: 32 }}>
-              ※ 본 문서는 AI(Claude)가 사용자의 입력을 기반으로 자동 생성한 <b>참고용 초안</b>입니다.
-              법적 효력이나 정확성을 보장하지 않으며, 실제 발송·제출 전 변호사 검토를 권고합니다.
+        <div className="preview-layout">
+          {/* 좌측: 기존 초안 본문 + 하단 네비 버튼 (렌더 방식·버튼 동작 유지) */}
+          <section className="preview-document-panel">
+            <div className="doc-preview" style={{ maxWidth: 800, margin: "0 auto" }}>
+              <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "inherit", margin: 0, fontSize: 14, lineHeight: 1.9 }}>
+                {draftText}
+              </pre>
+              <div className="doc-footer-note" style={{ marginTop: 32 }}>
+                ※ 본 문서는 AI(Claude)가 사용자의 입력을 기반으로 자동 생성한 <b>참고용 초안</b>입니다.
+                법적 효력이나 정확성을 보장하지 않으며, 실제 발송·제출 전 변호사 검토를 권고합니다.
+              </div>
             </div>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: 800, margin: "20px auto 0" }}>
-            <button className="btn btn-subtle" onClick={onBack}>
-              <Icon name="chevronL" size={14} /> 이전 (정보 수정)
-            </button>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn btn-secondary" onClick={onDownload}>
-                <Icon name="download" size={14} /> .docx 받기
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: 800, margin: "20px auto 0" }}>
+              <button className="btn btn-subtle" onClick={onBack}>
+                <Icon name="chevronL" size={14} /> 이전 (정보 수정)
               </button>
-              <button className="btn btn-primary" onClick={onNext}>
-                다음 (수정·저장) <Icon name="chevronR" size={14} color="#fff" />
-              </button>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="btn btn-secondary" onClick={onRegenerate} disabled={generating}>
+                  <Icon name="refresh" size={14} /> 다시 생성
+                </button>
+                <button className="btn btn-secondary" onClick={onDownload}>
+                  <Icon name="download" size={14} /> .docx 받기
+                </button>
+                <button className="btn btn-primary" onClick={onNext}>
+                  다음 (수정·저장) <Icon name="chevronR" size={14} color="#fff" />
+                </button>
+              </div>
             </div>
-          </div>
-        </>
+          </section>
+
+          {/* 우측: 읽기 전용 증거 패널 (기존 EvidenceUploader 재사용) */}
+          <aside className="preview-evidence-panel">
+            <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px", display: "flex", alignItems: "center", gap: 6 }}>
+              <Icon name="attachment" size={14} color="var(--color-neutral-fg-2)" /> 증거 자료
+            </h3>
+            <EvidenceUploader
+              mode="preview"
+              readonly={true}
+              showDownloadButton={true}
+              evidenceList={evidenceList}
+              aiExtract={false}
+            />
+          </aside>
+        </div>
       )}
     </div>
   );
 }
 
 // ── STEP 3: 대화형 수정 및 저장 ──────────────────────────────
-function StepEdit({ docType, draftText, setDraftText, onBack, onDownload }) {
+function StepEdit({ docType, draftText, setDraftText, onBack, onDownload, onRegenerate, evidenceList = [] }) {
   const [messages, setMessages] = React.useState([
     { role: "ai", text: "초안이 완성되었어요. 자연어로 자유롭게 수정 요청을 보내주세요.\n내용을 더 강하게/부드럽게 바꾸거나, 특정 문구를 추가/삭제할 수 있어요." }
   ]);
@@ -552,111 +613,160 @@ function StepEdit({ docType, draftText, setDraftText, onBack, onDownload }) {
     }));
   };
 
+  // "완료": 확인 모달 → docx 다운로드 → "저장완료" 토스트 → 마이페이지
+  const handleComplete = () => {
+    if (!window.AppModal) return;
+    window.AppModal.open({
+      type: "confirm",
+      size: "sm",
+      title: "작성이 완료되었습니다",
+      body: <p style={{ margin: 0, fontSize: 14, lineHeight: 1.6 }}>파일을 다운로드 하시겠습니까?</p>,
+      actions: [
+        { label: "취소", variant: "btn-secondary" },
+        {
+          label: "docx 다운로드",
+          icon: "download",
+          variant: "btn-primary",
+          onClick: async () => {
+            await onDownload();
+            if (window.ToastManager) window.ToastManager.show({ type: "success", message: "저장완료" });
+            window.location.hash = "/mydocs";
+          },
+        },
+      ],
+    });
+  };
+
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 420px", minHeight: 760, background: "#fff" }}>
-      {/* 왼쪽: 문서 미리보기 */}
-      <div style={{ padding: "24px 40px", background: "var(--color-neutral-bg-alt)", overflowY: "auto", borderRight: "1px solid var(--color-neutral-stroke-2)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <button className="btn btn-subtle btn-sm" onClick={onBack}>
-              <Icon name="chevronL" size={14} /> 이전 단계
-            </button>
-            <DocChip type={meta.name} icon={meta.icon} active />
-            {(loading || riskChecking) && <span className="badge badge-warning">수정 중</span>}
-          </div>
-          <div style={{ display: "flex", gap: 6 }}>
-            <button className="btn btn-secondary btn-sm" onClick={onDownload}>
-              <Icon name="download" size={14} /> .docx 저장
-            </button>
-          </div>
-        </div>
-        <div className="doc-preview" style={{ padding: "48px 56px", maxWidth: 760, margin: "0 auto" }}>
-          <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "inherit", margin: 0, fontSize: 14, lineHeight: 1.9 }}>
-            {currentDraft}
-          </pre>
-          <div className="doc-footer-note" style={{ marginTop: 32 }}>
-            ※ 본 문서는 AI가 자동 생성한 참고용 초안입니다. 법적 효력이나 정확성을 보장하지 않습니다.
-          </div>
-        </div>
+    <div className="create-pane-preview" style={{ minHeight: 720 }}>
+      {/* 헤더 (미리보기와 동일 패턴 — 버튼은 하단으로 일관 배치) */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+        <h2 className="section-title">초안 수정·저장</h2>
+        <DocChip type={meta.name} icon={meta.icon} active />
+        {(loading || riskChecking) && <span className="badge badge-warning">수정 중</span>}
       </div>
 
-      {/* 오른쪽: 채팅 패널 */}
-      <div className="chat-panel">
-        <div className="chat-header">
-          <div className="chat-title">
-            <span className="chat-sparkle"><Icon name="sparkle" size={14} color="#fff" filled /></span>
-            AI 어시스턴트
+      <div className="preview-layout">
+        {/* 좌측: 문서 본문(스크롤) + 하단 일관 버튼 행 */}
+        <section className="preview-document-panel">
+          <div className="doc-preview" style={{ maxWidth: 800, margin: "0 auto" }}>
+            <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "inherit", margin: 0, fontSize: 14, lineHeight: 1.9 }}>
+              {currentDraft}
+            </pre>
+            <div className="doc-footer-note" style={{ marginTop: 32 }}>
+              ※ 본 문서는 AI가 자동 생성한 참고용 초안입니다. 법적 효력이나 정확성을 보장하지 않습니다.
+            </div>
           </div>
-        </div>
-        <div className="chat-body" ref={chatBodyRef}>
-          {messages.map((msg, i) => {
-            if (msg.role === "risk-result") {
-              return (
-                <div key={i} className="chat-msg chat-msg-ai">
-                  <span className="chat-msg-avatar">
-                    <Icon name="shield" size={12} color="#fff" />
-                  </span>
-                  <RiskResultChatMsg
-                    warnings={msg.warnings}
-                    msgIndex={i}
-                    onApply={handleApplySuggestion}
-                    onDismiss={handleDismissWarning}
-                  />
-                </div>
-              );
-            }
-            return (
-              <div key={i} className={`chat-msg ${msg.role === "ai" ? "chat-msg-ai" : "chat-msg-user"}`}
-                style={msg.role === "user" ? { flexDirection: "row-reverse" } : {}}>
-                <span className="chat-msg-avatar">
-                  {msg.role === "ai"
-                    ? <Icon name="sparkle" size={12} color="#fff" filled />
-                    : "나"}
-                </span>
-                <div className="chat-bubble" style={{ whiteSpace: "pre-wrap" }}>{msg.text}</div>
-              </div>
-            );
-          })}
-          {(loading || riskChecking) && (
-            <div className="chat-msg chat-msg-ai">
-              <span className="chat-msg-avatar"><Icon name="sparkle" size={12} color="#fff" filled /></span>
-              <div className="chat-bubble">
-                <div className="spinner" style={{ width: 20, height: 20 }} />
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: 800, margin: "20px auto 0" }}>
+            <button className="btn btn-subtle" onClick={onBack}>
+              <Icon name="chevronL" size={14} /> 이전 (미리보기)
+            </button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn-secondary" onClick={onRegenerate} disabled={loading || riskChecking}>
+                <Icon name="refresh" size={14} /> 다시 생성
+              </button>
+              <button className="btn btn-secondary" onClick={onDownload}>
+                <Icon name="download" size={14} /> .docx 받기
+              </button>
+              <button className="btn btn-primary" onClick={handleComplete}>
+                완료 <Icon name="chevronR" size={14} color="#fff" />
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* 우측: 증거 자료 목록 → 그 아래 AI 어시스턴트(채팅) */}
+        <aside className="preview-evidence-panel" style={{ position: "static" }}>
+          <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px", display: "flex", alignItems: "center", gap: 6 }}>
+            <Icon name="attachment" size={14} color="var(--color-neutral-fg-2)" /> 증거 자료
+          </h3>
+          <EvidenceUploader
+            mode="preview"
+            readonly={true}
+            showDownloadButton={true}
+            evidenceList={evidenceList}
+            aiExtract={false}
+          />
+
+          {/* AI 어시스턴트 채팅 (기존 마크업·로직 그대로) */}
+          <div className="chat-panel" style={{ marginTop: 16 }}>
+            <div className="chat-header">
+              <div className="chat-title">
+                <span className="chat-sparkle"><Icon name="sparkle" size={14} color="#fff" filled /></span>
+                AI 어시스턴트
               </div>
             </div>
-          )}
-        </div>
-        <div className="chat-composer">
-          <div className="chat-quick">
-            {QUICK_SUGGESTIONS.map(s => (
-              <button key={s} className="btn btn-sm" onClick={() => sendRevision(s)} disabled={loading || riskChecking}>{s}</button>
-            ))}
-            <button
-              className="btn btn-sm"
-              onClick={handleRiskCheck}
-              disabled={loading || riskChecking}
-              style={{ color: "var(--color-status-warning-fg, #D97706)", borderColor: "var(--color-status-warning-fg, #D97706)" }}
-            >
-              <Icon name="shield" size={12} color="var(--color-status-warning-fg, #D97706)" />
-              {riskChecking ? "검사 중..." : "위험문장 검사"}
-            </button>
+            <div className="chat-body" ref={chatBodyRef}>
+              {messages.map((msg, i) => {
+                if (msg.role === "risk-result") {
+                  return (
+                    <div key={i} className="chat-msg chat-msg-ai">
+                      <span className="chat-msg-avatar">
+                        <Icon name="shield" size={12} color="#fff" />
+                      </span>
+                      <RiskResultChatMsg
+                        warnings={msg.warnings}
+                        msgIndex={i}
+                        onApply={handleApplySuggestion}
+                        onDismiss={handleDismissWarning}
+                      />
+                    </div>
+                  );
+                }
+                return (
+                  <div key={i} className={`chat-msg ${msg.role === "ai" ? "chat-msg-ai" : "chat-msg-user"}`}
+                    style={msg.role === "user" ? { flexDirection: "row-reverse" } : {}}>
+                    <span className="chat-msg-avatar">
+                      {msg.role === "ai"
+                        ? <Icon name="sparkle" size={12} color="#fff" filled />
+                        : "나"}
+                    </span>
+                    <div className="chat-bubble" style={{ whiteSpace: "pre-wrap" }}>{msg.text}</div>
+                  </div>
+                );
+              })}
+              {(loading || riskChecking) && (
+                <div className="chat-msg chat-msg-ai">
+                  <span className="chat-msg-avatar"><Icon name="sparkle" size={12} color="#fff" filled /></span>
+                  <div className="chat-bubble">
+                    <div className="spinner" style={{ width: 20, height: 20 }} />
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="chat-composer">
+              <div className="chat-quick">
+                {QUICK_SUGGESTIONS.map(s => (
+                  <button key={s} className="btn btn-sm" onClick={() => sendRevision(s)} disabled={loading || riskChecking}>{s}</button>
+                ))}
+                <button
+                  className="btn btn-sm"
+                  onClick={handleRiskCheck}
+                  disabled={loading || riskChecking}
+                  style={{ color: "var(--color-status-warning-fg, #D97706)", borderColor: "var(--color-status-warning-fg, #D97706)" }}
+                >
+                  <Icon name="shield" size={12} color="var(--color-status-warning-fg, #D97706)" />
+                  {riskChecking ? "검사 중..." : "위험문장 검사"}
+                </button>
+              </div>
+              <div className="chat-composer-box">
+                <textarea rows={2}
+                  placeholder="어떤 부분을 수정할까요? (예: 4번 항목을 더 정중하게 바꿔줘)"
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendRevision(input); } }}
+                />
+                <button className="btn btn-primary btn-sm" style={{ width: 36, height: 32, padding: 0, borderRadius: 8 }}
+                  onClick={() => sendRevision(input)} disabled={loading || riskChecking || !input.trim()}>
+                  <Icon name="arrowUp" size={16} color="#fff" />
+                </button>
+              </div>
+              <p style={{ margin: 0, fontSize: 11, color: "var(--color-neutral-fg-3)", textAlign: "center" }}>
+                Shift+Enter로 줄바꿈, Enter로 전송
+              </p>
+            </div>
           </div>
-          <div className="chat-composer-box">
-            <textarea rows={2}
-              placeholder="어떤 부분을 수정할까요? (예: 4번 항목을 더 정중하게 바꿔줘)"
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendRevision(input); } }}
-            />
-            <button className="btn btn-primary btn-sm" style={{ width: 36, height: 32, padding: 0, borderRadius: 8 }}
-              onClick={() => sendRevision(input)} disabled={loading || riskChecking || !input.trim()}>
-              <Icon name="arrowUp" size={16} color="#fff" />
-            </button>
-          </div>
-          <p style={{ margin: 0, fontSize: 11, color: "var(--color-neutral-fg-3)", textAlign: "center" }}>
-            Shift+Enter로 줄바꿈, Enter로 전송
-          </p>
-        </div>
+        </aside>
       </div>
     </div>
   );
@@ -798,6 +908,7 @@ window.CreateScreen = function CreateScreen({ initialStep = 1, initialDocType = 
               draftText={draftText}
               generating={generating}
               genError={genError}
+              evidenceList={(formData && formData.evidence_list) || []}
               onBack={() => setStep(1)}
               onNext={() => setStep(3)}
               onRegenerate={() => formData && generate(formData)}
@@ -809,7 +920,9 @@ window.CreateScreen = function CreateScreen({ initialStep = 1, initialDocType = 
               docType={docType}
               draftText={draftText}
               setDraftText={setDraftText}
+              evidenceList={(formData && formData.evidence_list) || []}
               onBack={() => setStep(2)}
+              onRegenerate={() => formData && generate(formData)}
               onDownload={handleDownload}
             />
           )}

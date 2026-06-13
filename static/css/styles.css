@@ -1311,3 +1311,42 @@ input, textarea, select { font: inherit; }
 }
 .yes-no-toggle button.active-yes { background: var(--color-status-success-bg); color: var(--color-status-success-fg); }
 .yes-no-toggle button.active-no  { background: var(--color-status-danger-bg);  color: var(--color-status-danger-fg);  }
+
+/* ── 초안 미리보기 좌우 레이아웃 (문서 + 증거 패널, FR 1-D) ───── */
+.preview-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 24px;
+  align-items: start;
+}
+.preview-document-panel { min-width: 0; }
+.preview-evidence-panel { position: sticky; top: 96px; }
+.preview-evidence-panel .evidence-list {
+  display: flex; flex-direction: column; gap: 12px;
+}
+.evidence-preview-item {
+  padding: 12px;
+  border: 1px solid var(--color-neutral-stroke-2);
+  border-radius: 12px;
+  background: #fff;
+}
+.evidence-preview-actions {
+  margin-top: 10px; display: flex; justify-content: flex-end;
+}
+@media (max-width: 960px) {
+  .preview-layout { grid-template-columns: 1fr; }
+  .preview-evidence-panel { position: static; }
+}
+/* 미리보기(step2) 문서 본문: 내용이 길어도 한 화면에 들어오고 영역만 스크롤
+   (전역 .doc-preview/마이페이지 readonly에는 영향 없도록 스코프 한정) */
+.preview-document-panel .doc-preview {
+  max-height: calc(100vh - 300px);
+  overflow-y: auto;
+}
+/* 수정(step3) 우측 패널 내 AI 어시스턴트 채팅: 증거목록 아래 고정 높이로 내부 스크롤 */
+.preview-evidence-panel .chat-panel {
+  height: 480px;
+  border: 1px solid var(--color-neutral-stroke-2);
+  border-radius: 12px;
+  overflow: hidden;
+}

@@ -21,7 +21,7 @@ AI 법률 문서 자동화 서비스 — Flask 백엔드
 import io
 import os
 import re
-from datetime import date
+from datetime import date, datetime
 
 from dotenv import load_dotenv
 load_dotenv(override=True)
@@ -110,7 +110,10 @@ def build_prompt(doc_type, sender, receiver, case_info,
 3. 본문은 자연스러운 한국어 격식체로 작성하고, 추측 표현은 최소화할 것.
 4. 마크다운 기호(#, *, -, > 등)나 코드블록을 사용하지 말 것.
 5. 문서의 마지막 줄에 다음 안내 문구를 별도 단락으로 추가할 것:
-   「본 문서는 법률적 참고용 초안이며, 실제 제출 전 반드시 전문가와 상담하십시오.」{timeline_instruction}
+   「본 문서는 법률적 참고용 초안이며, 실제 제출 전 반드시 전문가와 상담하십시오.」
+6. 본문의 사실관계나 주장 부분에서 관련 증거가 명확한 경우 괄호 안에 증거번호를
+   자연스럽게 인용하십시오. 단, 문서 하단의 입증방법 목록은 서버에서 자동으로
+   추가하므로 직접 작성하지 마십시오.{timeline_instruction}
 """
 
 
@@ -190,6 +193,121 @@ def make_docx(text: str, title: str) -> bytes:
     return buf.getvalue()
 
 
+# ── 증거자료 저장·명명 (PRD: 증거 자료 명기 및 저장) ──────────────
+EVIDENCE_DIR = os.path.join(BASE_DIR, "증거파일")
+
+# 문서 종류별 증거번호 접두 (준비서면→갑, 반박문→을, 내용증명→첨부)
+EVIDENCE_PREFIX = {"brief": "갑", "rebuttal": "을", "notice": "첨부"}
+
+
+def _evidence_label_no(doc_type: str, seq: int):
+    """증거번호 표기와 파일명 토큰을 함께 반환. (표기, 파일토큰)"""
+    prefix = EVIDENCE_PREFIX.get(doc_type, "갑")
+    if prefix == "첨부":
+        return (f"첨부 제{seq}호", f"첨부{seq}")
+    return (f"{prefix} 제{seq}호증", f"{prefix}제{seq}호증")
+
+
+def _sanitize_part(s: str, maxlen: int = 24) -> str:
+    """파일명 토큰에서 공백·경로·금지문자 제거 (path traversal 방지 포함)."""
+    s = (s or "").strip()
+    # 경로 구분자/상위경로/윈도우 금지문자/제어문자/공백 제거
+    s = re.sub(r"[\\/:*?\"<>|\x00-\x1f]", "", s)
+    s = s.replace("..", "").replace("。", "")  # 상위경로·전각마침표 방지
+    s = re.sub(r"\s+", "", s)
+    return s[:maxlen] or "자료"
+
+
+# 증거번호 토큰(갑제1호증 / 을제2호증 / 증1 / 첨부1 등) 판별 — 자료명 중복 제거용
+_EVIDENCE_NO_RE = re.compile(r"^(갑|을|증|첨부)제?\d+호?증?$")
+
+
+def _clean_name_token(label: str, maxlen: int = 24) -> str:
+    """자료명 토큰 정리. 이미 명명된 파일 재업로드 시 증거번호·'날짜미상' 토큰을
+    제거해 '첨부1_첨부1_…_날짜미상' 같은 중복을 방지한다."""
+    base = os.path.splitext(label or "")[0]
+    kept = []
+    for tok in re.split(r"[_\s]+", base):
+        t = _sanitize_part(tok, maxlen)
+        if not t or t == "자료" or t == "날짜미상":
+            continue
+        if _EVIDENCE_NO_RE.match(t):
+            continue
+        kept.append(t)
+    name = "".join(kept)[:maxlen]
+    return name or "자료"
+
+
+def _unique_path(directory: str, filename: str) -> str:
+    """동일 파일명 충돌 시 _2, _3… 부여 (기존 파일 덮어쓰기 방지)."""
+    base, ext = os.path.splitext(filename)
+    candidate, n = filename, 2
+    while os.path.exists(os.path.join(directory, candidate)):
+        candidate = f"{base}_{n}{ext}"
+        n += 1
+    return candidate
+
+
+def format_evidence_section(evidence_list):
+    """업로드된 증거 목록을 문서 하단 「입 증 방 법」 섹션으로 결정적 생성.
+    (AI 프롬프트에 맡기지 않고 서버에서 고정 양식으로 붙여 문구·순서를 보장)"""
+    if not evidence_list:
+        return ""
+
+    lines = ["", "", "입 증 방 법", ""]
+    for idx, ev in enumerate(evidence_list, start=1):
+        evidence_no = (
+            ev.get("evidenceNo")
+            or ev.get("evidence_no")
+            or f"증 제{idx}호증"
+        )
+        title = (
+            ev.get("savedFilename")
+            or ev.get("saved_filename")
+            or ev.get("originalName")
+            or ev.get("original_name")
+            or "증거자료"
+        )
+        summary = ev.get("summary") or ev.get("description") or ""
+        lines.append(f"{idx}. {evidence_no}  {title}")
+        if summary:
+            lines.append(f"   - 입증취지: {summary}")
+        lines.append("")
+
+    return "\n".join(lines).rstrip()
+
+
+def _has_evidence_section(draft_text):
+    """초안에 '입증방법' 섹션 헤더 줄이 이미 있는지 검사.
+    본문 상용구(예: 첨부서류의 '위 입증방법 각 1통')는 오탐하지 않도록,
+    공백 제거 후 한 줄이 정확히 '입증방법'인 헤더 줄만 인정한다."""
+    for line in draft_text.split("\n"):
+        if line.replace(" ", "").strip() == "입증방법":
+            return True
+    return False
+
+
+def append_evidence_section(draft_text, evidence_list):
+    """초안 본문에 증거목록을 1회만 안전하게 추가 (이미 섹션이 있으면 중복 방지)."""
+    if evidence_list and not _has_evidence_section(draft_text):
+        return draft_text + format_evidence_section(evidence_list)
+    return draft_text
+
+
+def _strip_preview_only_notes(text: str) -> str:
+    """미리보기 전용 고지문구만 다운로드 본문에서 제거 (PRD: 다운로드 문서 형식).
+    과도 삭제 방지를 위해 '참고용 초안' + (상담/전문가/검토)가 함께 있는 줄만 제거한다."""
+    out = []
+    for line in text.split("\n"):
+        s = line.strip().strip("「」 ")
+        if "참고용 초안" in s and ("상담" in s or "전문가" in s or "검토" in s):
+            continue
+        out.append(line)
+    while out and not out[-1].strip():
+        out.pop()
+    return "\n".join(out)
+
+
 # ── 라우트 ────────────────────────────────────────────────────
 @app.route("/")
 def index():
@@ -228,6 +346,7 @@ def api_generate():
         facts=data.get("facts", ""),
         request_text=data.get("request", ""),
     )
+    evidence_list = data.get("evidence_list", []) or []
     try:
         client = anthropic.Anthropic(api_key=api_key)
         resp = client.messages.create(
@@ -235,7 +354,10 @@ def api_generate():
             max_tokens=3500,
             messages=[{"role": "user", "content": prompt}],
         )
-        return jsonify({"draft": resp.content[0].text.strip()})
+        draft = resp.content[0].text.strip()
+        # 증거목록은 모델이 아닌 서버에서 결정적으로 1회 append (중복 방지)
+        draft = append_evidence_section(draft, evidence_list)
+        return jsonify({"draft": draft})
     except Exception as e:
         return jsonify({"error": f"Claude 호출 실패: {e}"}), 500
 
@@ -287,8 +409,11 @@ def api_download_docx():
     title = data.get("title", "법률문서")
     if not text.strip():
         return jsonify({"error": "본문이 비어 있습니다."}), 400
+    # 다운로드 본문에서만 미리보기 전용 고지문구 제거 (미리보기 화면은 그대로 유지)
+    text = _strip_preview_only_notes(text)
     blob = make_docx(text, title)
-    filename = f"{title}_{date.today().strftime('%Y%m%d')}.docx"
+    # 다운로드 파일명: 문서종류명_날짜시간.docx (예: 내용증명_20260614_1530.docx)
+    filename = f"{title}_{datetime.now().strftime('%Y%m%d_%H%M')}.docx"
     return send_file(
         io.BytesIO(blob),
         as_attachment=True,
@@ -299,70 +424,103 @@ def api_download_docx():
 
 @app.route("/api/upload_evidence", methods=["POST"])
 def api_upload_evidence():
-    """증거 파일 업로드 + AI 날짜·내용 추출 (FR-17)"""
+    """증거 파일 업로드 + AI 날짜·자료명·내용 추출 + 명명규칙 저장 (FR-17 / PRD 증거 명기)
+
+    multipart/form-data:
+      file    : 업로드 파일
+      docType : notice|brief|rebuttal (증거번호 접두 결정)
+      seq     : 증거 순번(1-based)
+    AI 추출 실패(크레딧 부족 등) 시에도 fallback 값으로 명명·저장은 정상 동작한다.
+    """
     if "file" not in request.files:
         return jsonify({"error": "파일이 없습니다."}), 400
 
     f = request.files["file"]
     filename = f.filename or "unknown"
-
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not api_key:
-        return jsonify({"filename": filename, "extractedDate": None, "summary": "API 키 미설정"})
-
+    doc_type = request.form.get("docType", "brief")
     try:
-        import base64
-        raw = f.read()
-        b64 = base64.standard_b64encode(raw).decode()
-        mime = f.content_type or "application/octet-stream"
+        seq = int(request.form.get("seq", "1"))
+    except (TypeError, ValueError):
+        seq = 1
 
-        client = anthropic.Anthropic(api_key=api_key)
+    raw = f.read()
+    ext = os.path.splitext(filename)[1] or ""
 
-        if mime.startswith("image/"):
-            resp = client.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=300,
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {"type": "image", "source": {"type": "base64", "media_type": mime, "data": b64}},
-                        {"type": "text", "text": (
-                            "이 문서 이미지에서 가장 중요한 날짜(YYYY-MM-DD 형식)와 "
-                            "핵심 내용을 한 줄로 추출해 주세요. "
-                            "JSON으로만 응답: {\"date\": \"YYYY-MM-DD\", \"summary\": \"...\"}"
-                        )},
-                    ],
-                }],
-            )
-        else:
-            resp = client.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=300,
-                messages=[{
-                    "role": "user",
-                    "content": (
-                        f"파일명: {filename}\n"
-                        "이 문서에서 가장 중요한 날짜(YYYY-MM-DD)와 핵심 내용 한 줄을 추출하세요. "
-                        "JSON으로만 응답: {\"date\": \"YYYY-MM-DD\", \"summary\": \"...\"}"
-                    ),
-                }],
-            )
-
-        import json as _json
-        raw_text = resp.content[0].text.strip()
-        # JSON 파싱 시도
+    # ── AI 추출 (날짜·자료명·요약) — 실패해도 폴백으로 진행 ──
+    date_val, label_val, summary_val = None, "", ""
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if api_key:
         try:
-            result = _json.loads(raw_text)
+            import base64, json as _json
+            b64 = base64.standard_b64encode(raw).decode()
+            mime = f.content_type or "application/octet-stream"
+            instr = (
+                "이 문서에서 (1) 가장 중요한 날짜(YYYY-MM-DD), "
+                "(2) 자료 종류를 5~10자 한글 명사로(label, 예: 카카오톡대화내역/계약서/세금계산서), "
+                "(3) 핵심 내용 한 줄(summary)을 추출하세요. "
+                "JSON으로만 응답: {\"date\": \"YYYY-MM-DD\", \"label\": \"...\", \"summary\": \"...\"}"
+            )
+            if mime.startswith("image/"):
+                content = [
+                    {"type": "image", "source": {"type": "base64", "media_type": mime, "data": b64}},
+                    {"type": "text", "text": instr},
+                ]
+            else:
+                content = [{"type": "text", "text": f"파일명: {filename}\n{instr}"}]
+            client = anthropic.Anthropic(api_key=api_key)
+            resp = client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=300,
+                messages=[{"role": "user", "content": content}],
+            )
+            raw_text = resp.content[0].text.strip()
+            try:
+                parsed = _json.loads(raw_text)
+            except Exception:
+                parsed = {}
+            date_val = parsed.get("date")
+            label_val = parsed.get("label") or ""
+            summary_val = parsed.get("summary") or ""
         except Exception:
-            result = {"date": None, "summary": raw_text[:120]}
+            pass  # AI 실패 → 아래 폴백 사용
 
-        return jsonify({
-            "filename": filename,
-            "extractedDate": result.get("date"),
-            "summary": result.get("summary", ""),
-        })
-    except Exception as e:
-        return jsonify({"filename": filename, "extractedDate": None, "summary": f"추출 실패: {e}"})
+    # 폴백: 자료명은 원본 파일명(확장자 제외)
+    if not label_val:
+        label_val = os.path.splitext(filename)[0]
+
+    # ── 명명 규칙 적용 (가이드에서 날짜 제외): [증거번호]_[자료명]_[간단설명].ext ──
+    evidence_no, no_token = _evidence_label_no(doc_type, seq)
+    name_token = _clean_name_token(label_val)
+    desc_token = _clean_name_token(summary_val) if summary_val else ""
+    if desc_token in ("자료", name_token):
+        desc_token = ""
+    parts = [no_token, name_token] + ([desc_token] if desc_token else [])
+    saved_filename = "_".join(parts) + ext
+
+    # ── 저장 (폴더 없으면 생성, 중복 시 _2… 부여) ──
+    os.makedirs(EVIDENCE_DIR, exist_ok=True)
+    saved_filename = _unique_path(EVIDENCE_DIR, saved_filename)
+    with open(os.path.join(EVIDENCE_DIR, saved_filename), "wb") as out_f:
+        out_f.write(raw)
+
+    from urllib.parse import quote
+    return jsonify({
+        "filename": filename,
+        "evidenceNo": evidence_no,
+        "savedFilename": saved_filename,
+        "extractedDate": date_val,
+        "label": label_val,
+        "summary": summary_val,
+        "downloadUrl": "/api/download_evidence/" + quote(saved_filename),
+    })
+
+
+@app.route("/api/download_evidence/<path:filename>")
+def api_download_evidence(filename):
+    """저장된 증거 파일 다운로드. send_from_directory가 경로 이탈(path traversal)을 차단한다."""
+    if not os.path.isdir(EVIDENCE_DIR):
+        return jsonify({"error": "저장된 증거 파일이 없습니다."}), 404
+    return send_from_directory(EVIDENCE_DIR, filename, as_attachment=True)
 
 
 @app.route("/api/analyze_opponent", methods=["POST"])
