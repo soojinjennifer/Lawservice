@@ -7,5 +7,8 @@ __pycache__/
 # API 키 및 민감 정보
 클로드 API 키.txt
 
+# 증거 파일 (개인정보 — 공개 저장소 업로드 금지)
+증거파일/
+
 # macOS
 .DS_Store
