@@ -1,58 +1,6 @@
 // create_screen.js — 문서 생성 화면 (3단계: 입력 → 미리보기 → 수정·저장)
 // 실제 /api/generate, /api/revise, /api/download_docx 백엔드 연동
-
-// ── RiskResultChatMsg — 채팅 패널 내 위험문장 검사 결과 렌더러 ──
-function RiskResultChatMsg({ warnings, msgIndex, onApply, onDismiss }) {
-  const visible = warnings.filter(w => !w.dismissed);
-  return (
-    <div style={{
-      background: "var(--color-status-warning-bg, #FFF7ED)",
-      border: "1px solid var(--color-status-warning-fg, #D97706)",
-      borderRadius: 12,
-      padding: "14px 16px",
-      fontSize: 13,
-    }}>
-      <div style={{ fontWeight: 700, color: "var(--color-status-warning-fg, #D97706)", marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
-        <Icon name="shield" size={14} color="var(--color-status-warning-fg, #D97706)" />
-        위험 문장 검사 결과 · {visible.length}건 발견
-      </div>
-      {warnings.map((w, wi) => {
-        if (w.dismissed) return null;
-        return (
-          <div key={wi} style={{
-            background: "#fff",
-            border: "1px solid rgba(217,119,6,0.20)",
-            borderRadius: 8,
-            padding: "10px 12px",
-            marginBottom: wi < warnings.length - 1 ? 8 : 0,
-          }}>
-            <div style={{ fontWeight: 600, marginBottom: 4, color: "var(--color-neutral-fg-1)" }}>
-              "{w.original}"
-            </div>
-            <div style={{ color: "#D97706", fontSize: 12, marginBottom: 4 }}>사유: {w.reason}</div>
-            <div style={{ color: "var(--brand-rest)", fontSize: 12, marginBottom: w.applied ? 0 : 10 }}>
-              제안: {w.suggestion}
-            </div>
-            {w.applied ? (
-              <div style={{ fontSize: 12, color: "var(--color-status-success-fg)", fontWeight: 600 }}>
-                ✓ 수정 적용됨
-              </div>
-            ) : (
-              <div style={{ display: "flex", gap: 6 }}>
-                <button className="btn btn-primary btn-sm" onClick={() => onApply(msgIndex, wi)}>
-                  제안대로 수정
-                </button>
-                <button className="btn btn-subtle btn-sm" onClick={() => onDismiss(msgIndex, wi)}>
-                  그대로 두기
-                </button>
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
+// RiskResultChatMsg는 ui/AIAssistPanel.js로 이동됨
 
 // ── 문서 종류별 타임라인 샘플 (입력 힌트용) ─────────────────────
 const SAMPLE_TIMELINE = {
@@ -76,7 +24,7 @@ function loadDraft() {
 }
 
 // ── STEP 1: 정보 입력 폼 ──────────────────────────────────────
-function StepInput({ docType, setDocType, onSubmit }) {
+function StepInput({ docType, setDocType, onSubmit, evidenceFiles = [], onEvidenceUpload, onEvidenceRemove }) {
   const saved = loadDraft();
 
   const [senderName,    setSenderName]    = React.useState(saved?.senderName    ?? "");
@@ -94,7 +42,6 @@ function StepInput({ docType, setDocType, onSubmit }) {
   const [facts,         setFacts]         = React.useState(saved?.facts   ?? "");
   const [request,       setRequest]       = React.useState(saved?.request ?? "");
   const [error,         setError]         = React.useState("");
-  const [evidenceFiles, setEvidenceFiles] = React.useState(saved?.evidenceFiles ?? []);
   const [rebuttalDraft, setRebuttalDraft] = React.useState("");
 
   // 저장된 데이터가 있으면 docType도 복원
@@ -122,71 +69,12 @@ function StepInput({ docType, setDocType, onSubmit }) {
   const updateRow = (i, field, val) =>
     setTimeline(tl => tl.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
 
-  // 증거 파일 업로드 핸들러 (FR-17) — 실제 /api/upload_evidence 연동
-  const handleEvidenceUpload = (fileList) => {
-    // 낙관적으로 업로드중 칩 추가 (각 칩에 고유 id 부여)
-    const baseLen = evidenceFiles.length;
-    const pending = fileList.map((f, k) => ({
-      id: `evi-${Date.now()}-${baseLen + k}`,
-      name: f.name,
-      originalName: f.name,
-      fileType: f.type || "",
-      fileSize: f.size || 0,
-      status: "uploading",
-      evidenceNo: null,
-      savedFilename: null,
-      downloadUrl: "",
-      date: null,
-      summary: "",
-      error: "",
-    }));
-    setEvidenceFiles(prev => [...prev, ...pending]);
-
-    // 파일별 순차 업로드 (하나 실패해도 나머지 진행)
-    fileList.forEach((file, k) => {
-      const chipId = pending[k].id;
-      const seq = baseLen + k + 1; // 현재 목록 기준 순번
-      window.LawAPI.uploadEvidence({ file, docType, seq })
-        .then(data => {
-          if (!data || !data.evidenceNo || !data.savedFilename) {
-            throw new Error("증거 정보를 받지 못했습니다.");
-          }
-          const downloadUrl = data.downloadUrl || window.LawAPI.evidenceDownloadUrl(data.savedFilename);
-          setEvidenceFiles(cur => cur.map(ef => ef.id === chipId ? {
-            ...ef,
-            status: "done",
-            evidenceNo: data.evidenceNo,
-            originalName: data.filename || ef.originalName,
-            savedFilename: data.savedFilename,
-            downloadUrl,
-            date: data.extractedDate || null,
-            extractedDate: data.extractedDate || null, // 기존 칩 호환
-            summary: data.summary || "",
-            uploadedAt: new Date().toISOString(),
-          } : ef));
-        })
-        .catch(err => {
-          setEvidenceFiles(cur => cur.map(ef => ef.id === chipId ? {
-            ...ef, status: "error", error: err.message || "업로드 실패",
-          } : ef));
-          if (window.ToastManager) {
-            window.ToastManager.show({
-              type: "error",
-              message: `"${file.name}" 증거 파일 업로드에 실패했습니다. 잠시 후 다시 시도해 주세요.`,
-            });
-          }
-        });
-    });
-  };
-  const handleEvidenceRemove = (i) => setEvidenceFiles(prev => prev.filter((_, idx) => idx !== i));
-
-  // 임시 저장 핸들러 — Toast 컴포넌트로 알림
+  // 임시 저장 핸들러 — Toast 컴포넌트로 알림 (evidenceFiles는 prop에서 수신)
   const handleTempSave = () => {
     const data = {
       docType, senderName, senderAddr, senderPhone,
       receiverName, receiverAddr, receiverPhone,
       court, caseNum, caseName, timeline, facts, request,
-      // 증거 파일도 임시 보관 (업로드 완료분만, 서버 아닌 sessionStorage)
       evidenceFiles: evidenceFiles.filter(f => f.status === "done"),
       savedAt: new Date().toISOString(),
     };
@@ -243,16 +131,11 @@ function StepInput({ docType, setDocType, onSubmit }) {
             필수 항목은 <span style={{ color: "var(--color-status-danger-fg)" }}>*</span>로 표시되어 있어요.
           </p>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {loadDraft() && (
-            <span style={{ fontSize: 12, color: "var(--color-neutral-fg-3)" }}>
-              <Icon name="clock" size={13} color="var(--color-neutral-fg-3)" /> 임시 저장 복원됨
-            </span>
-          )}
-          <button className="btn btn-secondary" onClick={handleTempSave}>
-            <Icon name="save" size={14} /> 임시 저장
-          </button>
-        </div>
+        {loadDraft() && (
+          <span style={{ fontSize: 12, color: "var(--color-neutral-fg-3)", display: "flex", alignItems: "center", gap: 4 }}>
+            <Icon name="clock" size={13} color="var(--color-neutral-fg-3)" /> 임시 저장 복원됨
+          </span>
+        )}
       </div>
 
       {/* ① 문서 종류 */}
@@ -273,18 +156,9 @@ function StepInput({ docType, setDocType, onSubmit }) {
             발신인 정보 <span className="req">*</span>
           </h3>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div className="field">
-              <label className="field-label">성명 / 법인명</label>
-              <input className="input" value={senderName} onChange={e => setSenderName(e.target.value)} placeholder="홍길동 / (주)○○○" />
-            </div>
-            <div className="field">
-              <label className="field-label">주소</label>
-              <input className="input" value={senderAddr} onChange={e => setSenderAddr(e.target.value)} placeholder="서울특별시 ○○구 ○○로 ○○" />
-            </div>
-            <div className="field">
-              <label className="field-label">연락처</label>
-              <input className="input" value={senderPhone} onChange={e => setSenderPhone(e.target.value)} placeholder="010-0000-0000" />
-            </div>
+            <TextInput label="성명 / 법인명" placeholder="홍길동 / (주)○○○" value={senderName} onChange={e => setSenderName(e.target.value)} />
+            <TextInput label="주소" placeholder="서울특별시 ○○구 ○○로 ○○" value={senderAddr} onChange={e => setSenderAddr(e.target.value)} />
+            <TextInput label="연락처" placeholder="010-0000-0000" value={senderPhone} onChange={e => setSenderPhone(e.target.value)} />
           </div>
         </div>
         <div>
@@ -293,18 +167,9 @@ function StepInput({ docType, setDocType, onSubmit }) {
             수신인 정보 <span className="req">*</span>
           </h3>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div className="field">
-              <label className="field-label">성명 / 법인명</label>
-              <input className="input" value={receiverName} onChange={e => setReceiverName(e.target.value)} placeholder="(주)○○○ 대표이사 ○○○" />
-            </div>
-            <div className="field">
-              <label className="field-label">주소</label>
-              <input className="input" value={receiverAddr} onChange={e => setReceiverAddr(e.target.value)} placeholder="서울특별시 ○○구 ○○로 ○○" />
-            </div>
-            <div className="field">
-              <label className="field-label">연락처 (선택)</label>
-              <input className="input" value={receiverPhone} onChange={e => setReceiverPhone(e.target.value)} placeholder="02-0000-0000" />
-            </div>
+            <TextInput label="성명 / 법인명" placeholder="(주)○○○ 대표이사 ○○○" value={receiverName} onChange={e => setReceiverName(e.target.value)} />
+            <TextInput label="주소" placeholder="서울특별시 ○○구 ○○로 ○○" value={receiverAddr} onChange={e => setReceiverAddr(e.target.value)} />
+            <TextInput label="연락처 (선택)" placeholder="02-0000-0000" value={receiverPhone} onChange={e => setReceiverPhone(e.target.value)} />
           </div>
         </div>
       </section>
@@ -317,18 +182,9 @@ function StepInput({ docType, setDocType, onSubmit }) {
             사건 표시
           </h3>
           <div className="field-row" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
-            <div className="field">
-              <label className="field-label">법원</label>
-              <input className="input" value={court} onChange={e => setCourt(e.target.value)} placeholder="서울중앙지방법원" />
-            </div>
-            <div className="field">
-              <label className="field-label">사건번호</label>
-              <input className="input" value={caseNum} onChange={e => setCaseNum(e.target.value)} placeholder="2025가합12345" />
-            </div>
-            <div className="field">
-              <label className="field-label">사건명</label>
-              <input className="input" value={caseName} onChange={e => setCaseName(e.target.value)} placeholder="손해배상 청구의 소" />
-            </div>
+            <TextInput label="법원" placeholder="서울중앙지방법원" value={court} onChange={e => setCourt(e.target.value)} />
+            <TextInput label="사건번호" placeholder="2025가합12345" value={caseNum} onChange={e => setCaseNum(e.target.value)} />
+            <TextInput label="사건명" placeholder="손해배상 청구의 소" value={caseName} onChange={e => setCaseName(e.target.value)} />
           </div>
         </section>
       )}
@@ -350,35 +206,15 @@ function StepInput({ docType, setDocType, onSubmit }) {
           </div>
           {timeline.map((row, i) => (
             <div key={i} className="timeline-row">
-              <input className="input" value={row.date} onChange={e => updateRow(i, "date", e.target.value)} placeholder="2025-01-01" />
-              <input className="input" value={row.event} onChange={e => updateRow(i, "event", e.target.value)} placeholder="사건 내용" />
-              <button className="icon-btn" aria-label="삭제" onClick={() => removeRow(i)}>
-                <Icon name="trash" size={16} color="var(--color-neutral-fg-3)" />
-              </button>
+              <TextInput placeholder="2025-01-01" value={row.date} onChange={e => updateRow(i, "date", e.target.value)} />
+              <TextInput placeholder="사건 내용" value={row.event} onChange={e => updateRow(i, "event", e.target.value)} />
+              <Btn variant="icon" icon="trash" aria-label="삭제" onClick={() => removeRow(i)} />
             </div>
           ))}
           <button className="btn btn-outline btn-sm" style={{ alignSelf: "flex-start", marginTop: 4 }} onClick={addRow}>
             <Icon name="plus" size={14} color="currentColor" /> 행 추가
           </button>
         </div>
-      </section>
-
-      {/* 증거 업로드 (FR-17) — 모든 문서 종류 공통 */}
-      <section style={{ marginBottom: 32 }}>
-        <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px", display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ width: 24, height: 24, borderRadius: 6, background: "var(--brand-light)", color: "var(--brand-rest)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700 }}>
-            <Icon name="attachment" size={14} />
-          </span>
-          증거 자료 업로드
-          <span className="muted" style={{ fontSize: 12, fontWeight: 400, marginLeft: 4 }}>(선택)</span>
-        </h3>
-        <EvidenceUploader
-          files={evidenceFiles}
-          onUpload={handleEvidenceUpload}
-          onRemove={handleEvidenceRemove}
-          aiExtract={true}
-          multiple={true}
-        />
       </section>
 
       {/* 상대방 문서 분석 (FR-18, 19) — 반박문 전용 */}
@@ -399,53 +235,57 @@ function StepInput({ docType, setDocType, onSubmit }) {
 
       {/* ⑤ 사건 경위 / ⑥ 요구사항 */}
       <section style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32, marginBottom: 32 }}>
-        <div className="field">
-          <label className="field-label" style={{ fontSize: 14 }}>
-            <span style={{ width: 22, height: 22, borderRadius: 6, background: "var(--brand-light)", color: "var(--brand-rest)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, marginRight: 6 }}>⑤</span>
-            사건 경위·핵심 내용 <span className="req">*</span>
-          </label>
-          <textarea className="textarea" rows={6} value={facts}
-            onChange={e => setFacts(e.target.value)}
-            placeholder="사건의 경위, 계약 내용, 상대방의 위반 행위 등을 자세히 입력해 주세요." />
-          <div className="field-help">AI가 본문 서술에 활용합니다. 자세할수록 좋아요.</div>
-        </div>
-        <div className="field">
-          <label className="field-label" style={{ fontSize: 14 }}>
-            <span style={{ width: 22, height: 22, borderRadius: 6, background: "var(--brand-light)", color: "var(--brand-rest)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, marginRight: 6 }}>⑥</span>
-            요구사항 · 주장하려는 결론
-          </label>
-          <textarea className="textarea" rows={6} value={request}
-            onChange={e => setRequest(e.target.value)}
-            placeholder="상대방에게 요구할 사항, 기한, 미이행 시 조치 등을 명확히 입력해 주세요." />
-          <div className="field-help">상대방에게 요구할 사항·기한을 명확히 입력해 주세요.</div>
-        </div>
+        <Textarea
+          label="사건 경위·핵심 내용"
+          required
+          rows={6}
+          value={facts}
+          onChange={e => setFacts(e.target.value)}
+          placeholder="사건의 경위, 계약 내용, 상대방의 위반 행위 등을 자세히 입력해 주세요."
+          helperText="AI가 본문 서술에 활용합니다. 자세할수록 좋아요."
+          state={error && !facts.trim() ? "error" : "default"}
+          errorText={error && !facts.trim() ? error : ""}
+        />
+        <Textarea
+          label="요구사항 · 주장하려는 결론"
+          rows={6}
+          value={request}
+          onChange={e => setRequest(e.target.value)}
+          placeholder="상대방에게 요구할 사항, 기한, 미이행 시 조치 등을 명확히 입력해 주세요."
+          helperText="상대방에게 요구할 사항·기한을 명확히 입력해 주세요."
+        />
       </section>
 
-      <hr className="divider" style={{ margin: "0 0 20px" }} />
-
-      {error && (
+      {error && facts.trim() && (
         <Alert type="error" style={{ marginBottom: 16 }}>{error}</Alert>
       )}
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <button className="btn btn-secondary btn-lg" onClick={handleTempSave}>
-          <Icon name="save" size={14} /> 임시 저장
-        </button>
-        <button className="btn btn-primary btn-lg" onClick={handleSubmit}>
-          <Icon name="sparkle" size={16} color="#fff" filled /> 초안 생성하기
-        </button>
+      <div className="create-bottom-bar">
+        <Btn variant="ghost" size="lg" icon="save" onClick={handleTempSave}>임시 저장</Btn>
+        <Btn variant="primary" size="lg" icon="sparkle" onClick={handleSubmit}>초안 생성하기</Btn>
       </div>
     </div>
   );
 }
 
 // ── STEP 2: 초안 미리보기 ─────────────────────────────────────
-function StepPreview({ docType, draftText, generating, genError, onBack, onNext, onRegenerate, onDownload, evidenceList = [] }) {
+function StepPreview({ docType, draftText, generating, genError, onBack, onNext, onRegenerate, onDownload,
+  chatMessages, sendRevision, chatLoading, chatRiskChecking, handleRiskCheck, handleApplySuggestion, handleDismissWarning, quickSuggestions
+}) {
   const meta = DocTypeMeta(docType);
-  const lines = (draftText || "").split("\n");
 
   return (
     <div className="create-pane-preview" style={{ minHeight: 720 }}>
+      <AIAssistPanel
+        messages={chatMessages || []}
+        onSend={sendRevision || (() => {})}
+        loading={chatLoading || false}
+        riskChecking={chatRiskChecking || false}
+        onRiskCheck={handleRiskCheck || (() => {})}
+        onApplySuggestion={handleApplySuggestion || (() => {})}
+        onDismissWarning={handleDismissWarning || (() => {})}
+        quickSuggestions={quickSuggestions || []}
+      />
       <div style={{ marginBottom: 20 }}>
         <h2 className="section-title">초안 미리보기</h2>
         <p className="muted" style={{ fontSize: 13, margin: "6px 0 0" }}>
@@ -472,52 +312,30 @@ function StepPreview({ docType, draftText, generating, genError, onBack, onNext,
           <div style={{ maxWidth: 500, margin: "0 auto 20px" }}>
             <Alert type="error">{genError}</Alert>
           </div>
-          <button className="btn btn-primary" onClick={onBack}>← 입력 화면으로 돌아가기</button>
+          <Btn variant="primary" onClick={onBack} icon="chevronL">입력 화면으로 돌아가기</Btn>
         </div>
       ) : (
-        <div className="preview-layout">
-          {/* 좌측: 기존 초안 본문 + 하단 네비 버튼 (렌더 방식·버튼 동작 유지) */}
-          <section className="preview-document-panel">
-            <div className="doc-preview" style={{ maxWidth: 800, margin: "0 auto" }}>
-              <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "inherit", margin: 0, fontSize: 14, lineHeight: 1.9 }}>
-                {draftText}
-              </pre>
-              <div className="doc-footer-note" style={{ marginTop: 32 }}>
-                ※ 본 문서는 AI(Claude)가 사용자의 입력을 기반으로 자동 생성한 <b>참고용 초안</b>입니다.
-                법적 효력이나 정확성을 보장하지 않으며, 실제 발송·제출 전 변호사 검토를 권고합니다.
-              </div>
+        <div style={{ maxWidth: 800, margin: "0 auto" }}>
+          <div className="doc-preview">
+            <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "inherit", margin: 0, fontSize: 14, lineHeight: 1.9 }}>
+              {draftText}
+            </pre>
+            <div className="doc-footer-note" style={{ marginTop: 32 }}>
+              ※ 본 문서는 AI(Claude)가 사용자의 입력을 기반으로 자동 생성한 <b>참고용 초안</b>입니다.
+              법적 효력이나 정확성을 보장하지 않으며, 실제 발송·제출 전 변호사 검토를 권고합니다.
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: 800, margin: "20px auto 0" }}>
-              <button className="btn btn-subtle" onClick={onBack}>
-                <Icon name="chevronL" size={14} /> 이전 (정보 수정)
-              </button>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button className="btn btn-secondary" onClick={onRegenerate} disabled={generating}>
-                  <Icon name="refresh" size={14} /> 다시 생성
-                </button>
-                <button className="btn btn-secondary" onClick={onDownload}>
-                  <Icon name="download" size={14} /> .docx 받기
-                </button>
-                <button className="btn btn-primary" onClick={onNext}>
-                  다음 (수정·저장) <Icon name="chevronR" size={14} color="#fff" />
-                </button>
-              </div>
-            </div>
-          </section>
+          </div>
+        </div>
+      )}
 
-          {/* 우측: 읽기 전용 증거 패널 (기존 EvidenceUploader 재사용) */}
-          <aside className="preview-evidence-panel">
-            <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px", display: "flex", alignItems: "center", gap: 6 }}>
-              <Icon name="attachment" size={14} color="var(--color-neutral-fg-2)" /> 증거 자료
-            </h3>
-            <EvidenceUploader
-              mode="preview"
-              readonly={true}
-              showDownloadButton={true}
-              evidenceList={evidenceList}
-              aiExtract={false}
-            />
-          </aside>
+      {!generating && !genError && (
+        <div className="create-bottom-bar">
+          <Btn variant="ghost" icon="chevronL" onClick={onBack}>이전</Btn>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn variant="secondary" icon="refresh" disabled={generating} onClick={onRegenerate}>다시 생성</Btn>
+            <Btn variant="secondary" icon="download" onClick={onDownload}>.docx 받기</Btn>
+            <Btn variant="primary" icon="chevronR" iconPos="right" onClick={onNext}>수정 완료</Btn>
+          </div>
         </div>
       )}
     </div>
@@ -525,93 +343,8 @@ function StepPreview({ docType, draftText, generating, genError, onBack, onNext,
 }
 
 // ── STEP 3: 대화형 수정 및 저장 ──────────────────────────────
-function StepEdit({ docType, draftText, setDraftText, onBack, onDownload, onRegenerate, evidenceList = [] }) {
-  const [messages, setMessages] = React.useState([
-    { role: "ai", text: "초안이 완성되었어요. 자연어로 자유롭게 수정 요청을 보내주세요.\n내용을 더 강하게/부드럽게 바꾸거나, 특정 문구를 추가/삭제할 수 있어요." }
-  ]);
-  const [input, setInput] = React.useState("");
-  const [loading, setLoading] = React.useState(false);
-  const [riskChecking, setRiskChecking] = React.useState(false);
-  const [currentDraft, setCurrentDraft] = React.useState(draftText);
-  const chatBodyRef = React.useRef(null);
+function StepEdit({ docType, draftText, setDraftText, onBack, onDownload, onRegenerate }) {
   const meta = DocTypeMeta(docType);
-
-  const QUICK_SUGGESTIONS = ["더 강한 어조로", "더 정중한 표현으로", "법조항 인용 추가", "단락 요약"];
-
-  const scrollToBottom = () => {
-    if (chatBodyRef.current) chatBodyRef.current.scrollTop = chatBodyRef.current.scrollHeight;
-  };
-  React.useEffect(scrollToBottom, [messages]);
-
-  const sendRevision = async (text) => {
-    if (!text.trim() || loading || riskChecking) return;
-
-    // 수정 크레딧 확인
-    const { data: credits } = await AuthStore.getCredits().catch(() => ({ data: null }));
-    if (credits && credits.trial_revision_remaining <= 0) {
-      // 크레딧 소진 → 채팅에 안내 메시지 + 결제 모달
-      const DOC_PRICES = { notice: 9900, brief: 49000, rebuttal: 69000 };
-      const price = DOC_PRICES[docType] || 9900;
-      setMessages(m => [...m, {
-        role: "ai",
-        text: "무료 수정 횟수(3회)를 모두 사용했습니다.\n계속 수정하려면 해당 문서를 구매해 주세요.",
-      }]);
-      window.openPaymentFlow({
-        docType: meta.name,
-        price: price,
-        priceLabel: price.toLocaleString() + "원",
-        onSuccess: () => {},
-      });
-      return;
-    }
-
-    const userMsg = text.trim();
-    setInput("");
-    setMessages(m => [...m, { role: "user", text: userMsg }]);
-    setLoading(true);
-    try {
-      const revised = await window.LawAPI.revise({ draft: currentDraft, revisionRequest: userMsg });
-      setCurrentDraft(revised);
-      setDraftText(revised);
-      setMessages(m => [...m, { role: "ai", text: "수정이 완료되었습니다. 왼쪽 미리보기에서 변경 내용을 확인해 주세요." }]);
-      // 성공 시 크레딧 차감 (실패해도 UI는 진행)
-      AuthStore.deductTrialRevision().catch(() => {});
-    } catch (e) {
-      setMessages(m => [...m, { role: "ai", text: `오류가 발생했습니다: ${e.message}` }]);
-    }
-    setLoading(false);
-  };
-
-  const handleRiskCheck = () => {
-    if (!currentDraft?.trim() || loading || riskChecking) return;
-    setRiskChecking(true);
-    // 실제 API 연동 시: POST /api/check_risk
-    setTimeout(() => {
-      const warnings = [
-        { original: "즉각 법적 조치를 취할 것", reason: "위협적 표현으로 오해 소지", suggestion: "법적 절차를 검토할 예정입니다", applied: false, dismissed: false },
-        { original: "귀사의 과실이 명백하므로", reason: "단정적 표현 — 법적 다툼 여지", suggestion: "귀사의 행위로 인해 손해가 발생하였으므로", applied: false, dismissed: false },
-      ];
-      setMessages(m => [...m, { role: "risk-result", warnings }]);
-      setRiskChecking(false);
-    }, 1000);
-  };
-
-  const handleApplySuggestion = (msgIndex, warnIndex) => {
-    const w = messages[msgIndex].warnings[warnIndex];
-    setCurrentDraft(d => d.replace(w.original, w.suggestion));
-    setDraftText(prev => prev.replace(w.original, w.suggestion));
-    setMessages(msgs => msgs.map((m, mi) => {
-      if (mi !== msgIndex) return m;
-      return { ...m, warnings: m.warnings.map((w2, wi) => wi === warnIndex ? { ...w2, applied: true } : w2) };
-    }));
-  };
-
-  const handleDismissWarning = (msgIndex, warnIndex) => {
-    setMessages(msgs => msgs.map((m, mi) => {
-      if (mi !== msgIndex) return m;
-      return { ...m, warnings: m.warnings.map((w2, wi) => wi === warnIndex ? { ...w2, dismissed: true } : w2) };
-    }));
-  };
 
   // "완료": 확인 모달 → docx 다운로드 → "저장완료" 토스트 → 마이페이지
   const handleComplete = () => {
@@ -639,134 +372,34 @@ function StepEdit({ docType, draftText, setDraftText, onBack, onDownload, onRege
 
   return (
     <div className="create-pane-preview" style={{ minHeight: 720 }}>
-      {/* 헤더 (미리보기와 동일 패턴 — 버튼은 하단으로 일관 배치) */}
+      <AIAssistPanel disabled={true} />
+
+      {/* 헤더 */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
-        <h2 className="section-title">초안 수정·저장</h2>
+        <h2 className="section-title">초안 다운로드</h2>
         <DocChip type={meta.name} icon={meta.icon} active />
-        {(loading || riskChecking) && <span className="badge badge-warning">수정 중</span>}
       </div>
 
-      <div className="preview-layout">
-        {/* 좌측: 문서 본문(스크롤) + 하단 일관 버튼 행 */}
-        <section className="preview-document-panel">
-          <div className="doc-preview" style={{ maxWidth: 800, margin: "0 auto" }}>
-            <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "inherit", margin: 0, fontSize: 14, lineHeight: 1.9 }}>
-              {currentDraft}
-            </pre>
-            <div className="doc-footer-note" style={{ marginTop: 32 }}>
-              ※ 본 문서는 AI가 자동 생성한 참고용 초안입니다. 법적 효력이나 정확성을 보장하지 않습니다.
-            </div>
+      {/* 문서 본문 (1-column, full-width) */}
+      <div style={{ maxWidth: 800, margin: "0 auto" }}>
+        <div className="doc-preview">
+          <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "inherit", margin: 0, fontSize: 14, lineHeight: 1.9 }}>
+            {draftText}
+          </pre>
+          <div className="doc-footer-note" style={{ marginTop: 32 }}>
+            ※ 본 문서는 AI가 자동 생성한 참고용 초안입니다. 법적 효력이나 정확성을 보장하지 않습니다.
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: 800, margin: "20px auto 0" }}>
-            <button className="btn btn-subtle" onClick={onBack}>
-              <Icon name="chevronL" size={14} /> 이전 (미리보기)
-            </button>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn btn-secondary" onClick={onRegenerate} disabled={loading || riskChecking}>
-                <Icon name="refresh" size={14} /> 다시 생성
-              </button>
-              <button className="btn btn-secondary" onClick={onDownload}>
-                <Icon name="download" size={14} /> .docx 받기
-              </button>
-              <button className="btn btn-primary" onClick={handleComplete}>
-                완료 <Icon name="chevronR" size={14} color="#fff" />
-              </button>
-            </div>
-          </div>
-        </section>
+        </div>
+      </div>
 
-        {/* 우측: 증거 자료 목록 → 그 아래 AI 어시스턴트(채팅) */}
-        <aside className="preview-evidence-panel" style={{ position: "static" }}>
-          <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px", display: "flex", alignItems: "center", gap: 6 }}>
-            <Icon name="attachment" size={14} color="var(--color-neutral-fg-2)" /> 증거 자료
-          </h3>
-          <EvidenceUploader
-            mode="preview"
-            readonly={true}
-            showDownloadButton={true}
-            evidenceList={evidenceList}
-            aiExtract={false}
-          />
-
-          {/* AI 어시스턴트 채팅 (기존 마크업·로직 그대로) */}
-          <div className="chat-panel" style={{ marginTop: 16 }}>
-            <div className="chat-header">
-              <div className="chat-title">
-                <span className="chat-sparkle"><Icon name="sparkle" size={14} color="#fff" filled /></span>
-                AI 어시스턴트
-              </div>
-            </div>
-            <div className="chat-body" ref={chatBodyRef}>
-              {messages.map((msg, i) => {
-                if (msg.role === "risk-result") {
-                  return (
-                    <div key={i} className="chat-msg chat-msg-ai">
-                      <span className="chat-msg-avatar">
-                        <Icon name="shield" size={12} color="#fff" />
-                      </span>
-                      <RiskResultChatMsg
-                        warnings={msg.warnings}
-                        msgIndex={i}
-                        onApply={handleApplySuggestion}
-                        onDismiss={handleDismissWarning}
-                      />
-                    </div>
-                  );
-                }
-                return (
-                  <div key={i} className={`chat-msg ${msg.role === "ai" ? "chat-msg-ai" : "chat-msg-user"}`}
-                    style={msg.role === "user" ? { flexDirection: "row-reverse" } : {}}>
-                    <span className="chat-msg-avatar">
-                      {msg.role === "ai"
-                        ? <Icon name="sparkle" size={12} color="#fff" filled />
-                        : "나"}
-                    </span>
-                    <div className="chat-bubble" style={{ whiteSpace: "pre-wrap" }}>{msg.text}</div>
-                  </div>
-                );
-              })}
-              {(loading || riskChecking) && (
-                <div className="chat-msg chat-msg-ai">
-                  <span className="chat-msg-avatar"><Icon name="sparkle" size={12} color="#fff" filled /></span>
-                  <div className="chat-bubble">
-                    <div className="spinner" style={{ width: 20, height: 20 }} />
-                  </div>
-                </div>
-              )}
-            </div>
-            <div className="chat-composer">
-              <div className="chat-quick">
-                {QUICK_SUGGESTIONS.map(s => (
-                  <button key={s} className="btn btn-sm" onClick={() => sendRevision(s)} disabled={loading || riskChecking}>{s}</button>
-                ))}
-                <button
-                  className="btn btn-sm"
-                  onClick={handleRiskCheck}
-                  disabled={loading || riskChecking}
-                  style={{ color: "var(--color-status-warning-fg, #D97706)", borderColor: "var(--color-status-warning-fg, #D97706)" }}
-                >
-                  <Icon name="shield" size={12} color="var(--color-status-warning-fg, #D97706)" />
-                  {riskChecking ? "검사 중..." : "위험문장 검사"}
-                </button>
-              </div>
-              <div className="chat-composer-box">
-                <textarea rows={2}
-                  placeholder="어떤 부분을 수정할까요? (예: 4번 항목을 더 정중하게 바꿔줘)"
-                  value={input}
-                  onChange={e => setInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendRevision(input); } }}
-                />
-                <button className="btn btn-primary btn-sm" style={{ width: 36, height: 32, padding: 0, borderRadius: 8 }}
-                  onClick={() => sendRevision(input)} disabled={loading || riskChecking || !input.trim()}>
-                  <Icon name="arrowUp" size={16} color="#fff" />
-                </button>
-              </div>
-              <p style={{ margin: 0, fontSize: 11, color: "var(--color-neutral-fg-3)", textAlign: "center" }}>
-                Shift+Enter로 줄바꿈, Enter로 전송
-              </p>
-            </div>
-          </div>
-        </aside>
+      {/* 하단 sticky 액션 바 */}
+      <div className="create-bottom-bar">
+        <Btn variant="ghost" icon="chevronL" onClick={onBack}>이전 (수정)</Btn>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Btn variant="secondary" icon="refresh" onClick={onRegenerate}>다시 생성</Btn>
+          <Btn variant="secondary" icon="download" onClick={onDownload}>.docx 받기</Btn>
+          <Btn variant="primary" icon="chevronR" iconPos="right" onClick={handleComplete}>완료</Btn>
+        </div>
       </div>
     </div>
   );
@@ -799,6 +432,133 @@ window.CreateScreen = function CreateScreen({ initialStep = 1, initialDocType = 
   const [draftText, setDraftText] = React.useState("");
   const [generating, setGenerating] = React.useState(false);
   const [genError, setGenError]   = React.useState("");
+
+  // ── 증거 파일 state (StepInput에서 CreateScreen으로 lift) ────
+  const [evidenceFiles, setEvidenceFiles] = React.useState(() => {
+    try { return JSON.parse(sessionStorage.getItem(DRAFT_STORAGE_KEY))?.evidenceFiles || []; }
+    catch { return []; }
+  });
+
+  const handleEvidenceUpload = (fileList) => {
+    const baseLen = evidenceFiles.length;
+    const pending = fileList.map((f, k) => ({
+      id: `evi-${Date.now()}-${baseLen + k}`,
+      name: f.name,
+      originalName: f.name,
+      fileType: f.type || "",
+      fileSize: f.size || 0,
+      status: "uploading",
+      evidenceNo: null,
+      savedFilename: null,
+      downloadUrl: "",
+      date: null,
+      summary: "",
+      error: "",
+    }));
+    setEvidenceFiles(prev => [...prev, ...pending]);
+
+    fileList.forEach((file, k) => {
+      const chipId = pending[k].id;
+      const seq = baseLen + k + 1;
+      window.LawAPI.uploadEvidence({ file, docType, seq })
+        .then(data => {
+          if (!data || !data.evidenceNo || !data.savedFilename) {
+            throw new Error("증거 정보를 받지 못했습니다.");
+          }
+          const downloadUrl = data.downloadUrl || window.LawAPI.evidenceDownloadUrl(data.savedFilename);
+          setEvidenceFiles(cur => cur.map(ef => ef.id === chipId ? {
+            ...ef,
+            status: "done",
+            evidenceNo: data.evidenceNo,
+            originalName: data.filename || ef.originalName,
+            savedFilename: data.savedFilename,
+            downloadUrl,
+            date: data.extractedDate || null,
+            extractedDate: data.extractedDate || null,
+            summary: data.summary || "",
+            uploadedAt: new Date().toISOString(),
+          } : ef));
+        })
+        .catch(err => {
+          setEvidenceFiles(cur => cur.map(ef => ef.id === chipId ? {
+            ...ef, status: "error", error: err.message || "업로드 실패",
+          } : ef));
+          if (window.ToastManager) {
+            window.ToastManager.show({
+              type: "error",
+              message: `"${file.name}" 증거 파일 업로드에 실패했습니다. 잠시 후 다시 시도해 주세요.`,
+            });
+          }
+        });
+    });
+  };
+
+  const handleEvidenceRemove = (i) => setEvidenceFiles(prev => prev.filter((_, idx) => idx !== i));
+
+  // ── Chat state — Step2·3 공유 (StepEdit에서 CreateScreen으로 lift) ────
+  const QUICK_SUGGESTIONS = ["더 강한 어조로", "더 정중한 표현으로", "법조항 인용 추가", "단락 요약"];
+  const [chatMessages, setChatMessages] = React.useState([
+    { role: "ai", text: "초안이 완성되었어요. 자연어로 자유롭게 수정 요청을 보내주세요.\n내용을 더 강하게/부드럽게 바꾸거나, 특정 문구를 추가/삭제할 수 있어요." }
+  ]);
+  const [chatLoading, setChatLoading] = React.useState(false);
+  const [chatRiskChecking, setChatRiskChecking] = React.useState(false);
+
+  const sendRevision = async (text) => {
+    if (!text.trim() || chatLoading || chatRiskChecking) return;
+    const { data: credits } = await AuthStore.getCredits().catch(() => ({ data: null }));
+    if (credits && credits.trial_revision_remaining <= 0) {
+      const DOC_PRICES = { notice: 9900, brief: 49000, rebuttal: 69000 };
+      const price = DOC_PRICES[docType] || 9900;
+      setChatMessages(m => [...m, {
+        role: "ai",
+        text: "무료 수정 횟수(3회)를 모두 사용했습니다.\n계속 수정하려면 해당 문서를 구매해 주세요.",
+      }]);
+      const chatMeta = DocTypeMeta(docType);
+      window.openPaymentFlow({ docType: chatMeta.name, price, priceLabel: price.toLocaleString() + "원", onSuccess: () => {} });
+      return;
+    }
+    const userMsg = text.trim();
+    setChatMessages(m => [...m, { role: "user", text: userMsg }]);
+    setChatLoading(true);
+    try {
+      const revised = await window.LawAPI.revise({ draft: draftText, revisionRequest: userMsg });
+      setDraftText(revised);
+      setChatMessages(m => [...m, { role: "ai", text: "수정이 완료되었습니다. 미리보기에서 변경 내용을 확인해 주세요." }]);
+      AuthStore.deductTrialRevision().catch(() => {});
+    } catch (e) {
+      setChatMessages(m => [...m, { role: "ai", text: `오류가 발생했습니다: ${e.message}` }]);
+    }
+    setChatLoading(false);
+  };
+
+  const handleRiskCheck = () => {
+    if (!draftText?.trim() || chatLoading || chatRiskChecking) return;
+    setChatRiskChecking(true);
+    setTimeout(() => {
+      const warnings = [
+        { original: "즉각 법적 조치를 취할 것", reason: "위협적 표현으로 오해 소지", suggestion: "법적 절차를 검토할 예정입니다", applied: false, dismissed: false },
+        { original: "귀사의 과실이 명백하므로", reason: "단정적 표현 — 법적 다툼 여지", suggestion: "귀사의 행위로 인해 손해가 발생하였으므로", applied: false, dismissed: false },
+      ];
+      setChatMessages(m => [...m, { role: "risk-result", warnings }]);
+      setChatRiskChecking(false);
+    }, 1000);
+  };
+
+  const handleApplySuggestion = (msgIndex, warnIndex) => {
+    const w = chatMessages[msgIndex].warnings[warnIndex];
+    setDraftText(prev => prev.replace(w.original, w.suggestion));
+    setChatMessages(msgs => msgs.map((m, mi) => {
+      if (mi !== msgIndex) return m;
+      return { ...m, warnings: m.warnings.map((w2, wi) => wi === warnIndex ? { ...w2, applied: true } : w2) };
+    }));
+  };
+
+  const handleDismissWarning = (msgIndex, warnIndex) => {
+    setChatMessages(msgs => msgs.map((m, mi) => {
+      if (mi !== msgIndex) return m;
+      return { ...m, warnings: m.warnings.map((w2, wi) => wi === warnIndex ? { ...w2, dismissed: true } : w2) };
+    }));
+  };
 
   const docTypeKorMap = { notice: "내용증명", brief: "준비서면", rebuttal: "상대방 반박문", appeal: "항소이유서", contract: "계약서" };
   const meta = DocTypeMeta(docType);
@@ -894,12 +654,15 @@ window.CreateScreen = function CreateScreen({ initialStep = 1, initialDocType = 
           <ClickableSteps current={step} onGoTo={n => { if (n === 1) setStep(1); }} />
         </div>
 
-        <div style={{ background: "#fff", border: "1px solid var(--color-neutral-stroke-2)", borderRadius: "var(--radius-xl)", overflow: "hidden" }}>
+        <div style={{ background: "#fff", border: "1px solid var(--color-neutral-stroke-2)", borderRadius: "var(--radius-xl)" }}>
           {step === 1 && (
             <StepInput
               docType={docType}
               setDocType={setDocType}
               onSubmit={generate}
+              evidenceFiles={evidenceFiles}
+              onEvidenceUpload={handleEvidenceUpload}
+              onEvidenceRemove={handleEvidenceRemove}
             />
           )}
           {step === 2 && (
@@ -908,11 +671,18 @@ window.CreateScreen = function CreateScreen({ initialStep = 1, initialDocType = 
               draftText={draftText}
               generating={generating}
               genError={genError}
-              evidenceList={(formData && formData.evidence_list) || []}
               onBack={() => setStep(1)}
               onNext={() => setStep(3)}
               onRegenerate={() => formData && generate(formData)}
               onDownload={handleDownload}
+              chatMessages={chatMessages}
+              sendRevision={sendRevision}
+              chatLoading={chatLoading}
+              chatRiskChecking={chatRiskChecking}
+              handleRiskCheck={handleRiskCheck}
+              handleApplySuggestion={handleApplySuggestion}
+              handleDismissWarning={handleDismissWarning}
+              quickSuggestions={QUICK_SUGGESTIONS}
             />
           )}
           {step === 3 && (
@@ -920,13 +690,67 @@ window.CreateScreen = function CreateScreen({ initialStep = 1, initialDocType = 
               docType={docType}
               draftText={draftText}
               setDraftText={setDraftText}
-              evidenceList={(formData && formData.evidence_list) || []}
               onBack={() => setStep(2)}
               onRegenerate={() => formData && generate(formData)}
               onDownload={handleDownload}
             />
           )}
         </div>
+
+        {/* 증거 자료 하단 공통 Container */}
+        {(step === 1 || evidenceFiles.some(f => f.status === "done" || f.status === "uploading")) && (
+          <div className="evidence-bottom-container">
+            <h3>
+              <Icon name="attachment" size={14} color="var(--color-neutral-fg-2)" />
+              증거 자료
+            </h3>
+            {/* Step1: EvidenceUploader dropzone */}
+            {step === 1 && (
+              <EvidenceUploader
+                mode="input"
+                files={evidenceFiles}
+                onUpload={handleEvidenceUpload}
+                onRemove={handleEvidenceRemove}
+                aiExtract={true}
+                multiple={true}
+              />
+            )}
+            {/* Step2·3: doctype-card 스타일 카드 그리드 */}
+            {step > 1 && (
+              <div className="evidence-card-grid">
+                {evidenceFiles.filter(f => f.status === "done").map((item, i) => {
+                  const evidenceNo = item.evidenceNo || `첨부 제${i+1}호`;
+                  const filename = item.originalName || item.name || "증거자료";
+                  const downloadUrl = item.downloadUrl || "";
+                  const originalIdx = evidenceFiles.findIndex(ef => ef.id ? ef.id === item.id : ef === item);
+                  return (
+                    <div key={item.id || i} className="evidence-file-card">
+                      <button
+                        className="evidence-file-card-close"
+                        onClick={() => handleEvidenceRemove(originalIdx >= 0 ? originalIdx : i)}
+                        aria-label="삭제"
+                      >
+                        <Icon name="dismiss" size={10} color="var(--color-neutral-fg-3)" />
+                      </button>
+                      <Badge variant="info">{evidenceNo}</Badge>
+                      <div className="evidence-file-name">{filename}</div>
+                      {downloadUrl && (
+                        <a
+                          href={downloadUrl}
+                          className="btn btn-sm"
+                          download
+                          style={{ marginTop: "auto", display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11 }}
+                        >
+                          <Icon name="download" size={11} /> 다운로드
+                        </a>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
       <LegalNotice />
       <SiteFooter />
