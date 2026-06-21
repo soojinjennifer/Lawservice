@@ -377,3 +377,47 @@ c:\Users\sooji\OneDrive\LawService\CURRUNT_TASK.md
 지금까지 진행한 내용을 CURRUNT_TASK.md 파일로 저장해줘
 Credit balance is too low
 
+---
+
+## 2026-06-18 작업 — CreateScreen Step2·3 레이아웃 개선 (v1·v2)
+
+### v1 작업 (이전 세션에서 완료)
+
+**목표**: Figma CreateScreen 디자인 3가지 반영
+
+**변경한 파일**
+- `static/js/create_screen.js` — evidenceFiles state를 CreateScreen으로 lift, StepInput TextInput/Textarea 교체, 각 step sticky bottom bar 추가
+- `static/js/ui/AIAssistPanel.js` — 신규 생성 (우측 slide-in drawer, "내편 전략 제안" 트리거 버튼, 위험문장 검사)
+- `static/css/styles.css` — `.evidence-bottom-container`, `.create-bottom-bar`, `.ai-assist-drawer`, `.ai-assist-trigger` 추가
+- `templates/index.html` — AIAssistPanel.js script 태그 추가
+
+---
+
+### v2 작업 (오늘 세션)
+
+**목표**: 스크린샷 기반 Step2·3 레이아웃 2가지 변경
+
+#### 1. 증거 자료 하단 카드 디자인 변경
+- Step1: EvidenceUploader dropzone 유지
+- Step2·3: 각 파일을 `.evidence-file-card` 스타일 카드로 표시 (Badge 첨부 번호, 파일명, 다운로드 링크, X 삭제 버튼)
+- X 버튼 → `handleEvidenceRemove` 호출 (Step2·3 모두 삭제 가능)
+
+#### 2. AI 어시스트 FAB + Slide-up drawer
+- 기존 "내편 전략 제안" trigger 버튼 → **`.create-fab` 원형 FAB 버튼** (position:fixed, 하단 우측 고정)
+- 기존 우측 slide-in → **하단 slide-up** (`translateY(100%)→0`, border-radius: 16px 16px 0 0)
+- Drawer 상단 drag handle 추가
+- **"내편 전략 제안" 버튼**: AI 패널 내 quick suggestion 행에서 "위험문장 검사" 우측에 배치 (placeholder, 추후 기능 연결)
+
+#### 3. Chat State Lift + Step별 채팅 활성화 변경
+- `messages`, `chatLoading`, `chatRiskChecking`, `sendRevision`, `handleRiskCheck`, `handleApplySuggestion`, `handleDismissWarning` → **CreateScreen으로 이동**
+- **Step2**: AIAssistPanel 추가, 채팅 완전 활성화, 채팅으로 초안 수정 가능, primary 버튼 "수정 완료"
+- **Step3**: AIAssistPanel `disabled=true`, placeholder "완료된 초안 문서를 다운로드 해주세요", 다운로드 전용 단계
+
+**변경한 파일**
+- `static/css/styles.css` — `.ai-assist-drawer` bottom slide로 수정, `.ai-assist-trigger` 제거, `.create-fab`, `.evidence-card-grid`, `.evidence-file-card` 추가
+- `static/js/ui/AIAssistPanel.js` — FAB 버튼 교체, drag handle, "내편 전략 제안" 버튼 추가, disabled placeholder 텍스트 변경
+- `static/js/create_screen.js` — Chat state lift, StepPreview 채팅 활성화 + AIAssistPanel 추가, StepEdit chat state 제거 + disabled 패널, EvidenceContainer 카드 그리드 교체
+
+**다음 단계 예정**
+- "내편 전략 제안" 버튼 기능 구현 (추후 지시 예정)
+
