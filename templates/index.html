@@ -17,7 +17,14 @@
       url: {{ supabase_url | default('', true) | tojson }},
       anonKey: {{ supabase_anon_key | default('', true) | tojson }}
     };
-  </script>
+
+    // 결제 클라이언트 설정 (공개값만 주입, NFR-PAY-01). testMode면 PG 팝업 없이 mock confirm.
+    window.PAYMENT_CONFIG = {
+      testMode: {{ pg_test_mode | default(true, true) | tojson }},
+      provider: {{ pg_provider | default('mock', true) | tojson }},
+      clientKey: {{ pg_client_key | default('', true) | tojson }}
+    };
+</script>
 
   <!-- React + JSX (CDN) -->
   <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
