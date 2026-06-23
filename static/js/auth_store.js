@@ -115,9 +115,22 @@
     return await sb.rpc("deduct_trial_revision");
   }
 
+  // 동기 user-id 캐시 (결제 권한 게이트 X-User-Id 헤더용, FR-30)
+  // async getCurrentUser는 fetch 헤더에서 못 쓰므로 세션 변화 시 캐시.
+  var _cachedUserId = null;
+  function getUserId() { return _cachedUserId; }
+  getSession().then(function (res) {
+    var s = res && res.data && res.data.session;
+    _cachedUserId = (s && s.user && s.user.id) || null;
+  });
+  onAuthStateChange(function (event, session) {
+    _cachedUserId = (session && session.user && session.user.id) || null;
+  });
+
   window.AuthStore = {
     getSession: getSession,
     getCurrentUser: getCurrentUser,
+    getUserId: getUserId,
     onAuthStateChange: onAuthStateChange,
     signIn: signIn,
     signUp: signUp,

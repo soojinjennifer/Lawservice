@@ -35,6 +35,15 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
 from doc_templates import DOC_TEMPLATES
+from payment_routes import (
+    payment_bp,
+    check_document_access,
+    record_generate_use,
+    check_and_increment_revision,
+    get_trial_status,
+    _normalize_doc_type,
+    DOC_PRICES,
+)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -44,6 +53,18 @@ app = Flask(
     static_folder=os.path.join(BASE_DIR, "static"),
     static_url_path="/static",
 )
+
+# 건별 결제 API 라우트 등록 (PRD 건별결제 v1.0)
+app.register_blueprint(payment_bp)
+
+
+def _gate_user_id():
+    """결제 권한 게이트용 사용자 식별 (Phase 1: 헤더/바디, Phase 2: Supabase JWT)."""
+    uid = request.headers.get("X-User-Id")
+    if not uid:
+        body = request.get_json(silent=True) or {}
+        uid = body.get("user_id")
+    return uid or "anonymous"
 
 
 # ── 한글(East Asian) 폰트 적용 헬퍼 ──────────────────────────
@@ -136,7 +157,7 @@ CENTER_KEYWORDS = (
 RIGHT_KEYWORDS = ("(인)", "대표이사")
 
 
-def make_docx(text: str, title: str) -> bytes:
+def make_docx(text: str, title: str, watermark_text: str = None) -> bytes:
     BODY_FONT = "바탕체"
     TITLE_FONT = "맑은 고딕"
 
@@ -186,6 +207,25 @@ def make_docx(text: str, title: str) -> bytes:
         else:
             p.alignment = WD_ALIGN_PARAGRAPH.LEFT
         _set_korean_font(run, TITLE_FONT if is_title_line else BODY_FONT)
+
+    if watermark_text:
+        doc.add_paragraph("")
+        wm_p = doc.add_paragraph()
+        wm_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        wm_run = wm_p.add_run(f"[ {watermark_text} ]")
+        wm_run.bold = True
+        wm_run.font.size = Pt(9)
+        _set_korean_font(wm_run, BODY_FONT)
+        # 구분선 역할 상단 테두리
+        pPr = wm_p._element.get_or_add_pPr()
+        pBdr = OxmlElement("w:pBdr")
+        top = OxmlElement("w:top")
+        top.set(qn("w:val"), "single")
+        top.set(qn("w:sz"), "4")
+        top.set(qn("w:space"), "4")
+        top.set(qn("w:color"), "AAAAAA")
+        pBdr.append(top)
+        pPr.append(pBdr)
 
     buf = io.BytesIO()
     doc.save(buf)
@@ -315,6 +355,10 @@ def index():
         "index.html",
         supabase_url=os.environ.get("SUPABASE_URL", ""),
         supabase_anon_key=os.environ.get("SUPABASE_ANON_KEY", ""),
+        # 결제 클라이언트 설정 (공개값만 — SECRET/WEBHOOK 키는 절대 전달 금지, NFR-PAY-01)
+        pg_test_mode=(os.environ.get("PG_TEST_MODE", "true").lower() == "true"),
+        pg_client_key=os.environ.get("PG_CLIENT_KEY", ""),
+        pg_provider=os.environ.get("PG_PROVIDER", "mock"),
     )
 
 
@@ -337,6 +381,15 @@ def api_generate():
     if not (data.get("facts") or "").strip():
         return jsonify({"error": "사건 경위(facts) 는 필수입니다."}), 400
 
+    # FR-30: 문서 접근 권한 게이트 (결제 대상 3종 한정). 권한 없으면 403 PAYMENT_REQUIRED.
+    user_id = _gate_user_id()
+    doc_type_en = _normalize_doc_type(doc_type)
+    if doc_type_en in DOC_PRICES:
+        access = check_document_access(user_id, doc_type_en)
+        if not access["allowed"]:
+            return jsonify({"error": "PAYMENT_REQUIRED",
+                            "message": "결제가 필요한 문서입니다."}), 403
+
     prompt = build_prompt(
         doc_type=doc_type,
         sender=data.get("sender", ""),
@@ -357,6 +410,9 @@ def api_generate():
         draft = resp.content[0].text.strip()
         # 증거목록은 모델이 아닌 서버에서 결정적으로 1회 append (중복 방지)
         draft = append_evidence_section(draft, evidence_list)
+        # FR-30/FR-28: 생성 성공 시 사용 횟수 기록 (환불 가능 여부 판단 기준)
+        if doc_type_en in DOC_PRICES:
+            record_generate_use(user_id, doc_type_en)
         return jsonify({"draft": draft})
     except Exception as e:
         return jsonify({"error": f"Claude 호출 실패: {e}"}), 500
@@ -376,6 +432,19 @@ def api_revise():
         return jsonify({"error": "수정할 초안이 없습니다."}), 400
     if not revision_request:
         return jsonify({"error": "수정 요청 내용을 입력해주세요."}), 400
+
+    # FR-30: 수정 횟수 게이트 (결제 대상 3종 한정)
+    doc_type_en = _normalize_doc_type(data.get("doc_type") or data.get("docType"))
+    if doc_type_en and doc_type_en in DOC_PRICES:
+        user_id = _gate_user_id()
+        rev = check_and_increment_revision(user_id, doc_type_en)
+        if not rev["allowed"]:
+            return jsonify({
+                "error": "REVISION_LIMIT_EXCEEDED",
+                "used": rev["used"],
+                "limit": rev["limit"],
+                "message": f"대화형 수정 횟수({rev['limit']}회)를 모두 사용하셨습니다.",
+            }), 403
 
     prompt = f"""다음은 한국 법률 문서 초안입니다:
 
@@ -402,6 +471,51 @@ def api_revise():
         return jsonify({"error": f"Claude 호출 실패: {e}"}), 500
 
 
+@app.route("/api/suggest_strategies", methods=["POST"])
+def suggest_strategies():
+    """초안 설득력 강화 전략 2종 제안 (FR-24 내편 전략 제안)"""
+    data = request.get_json(force=True)
+    draft = (data.get("draft") or "").strip()
+    if not draft:
+        return jsonify({"error": "초안이 없습니다"}), 400
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return jsonify({"error": "서버에 Anthropic API 키가 설정되지 않았습니다. .env 파일을 확인해 주세요."}), 500
+
+    prompt = f"""다음 법률 문서 초안을 분석하여 설득력을 높일 수 있는 전략 2가지를 제안해주세요.
+
+초안:
+{draft}
+
+각 전략은 아래 JSON 형식으로 반환하세요:
+{{
+  "strategies": [
+    {{"title": "전략 제목 (15자 이내)", "description": "전략 설명 (50자 이내, 구체적 방향)"}},
+    {{"title": "전략 제목 (15자 이내)", "description": "전략 설명 (50자 이내, 구체적 방향)"}}
+  ]
+}}
+
+JSON만 반환하고 다른 텍스트는 포함하지 마세요."""
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        resp = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=500,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        import json as _json, re as _re
+        raw = resp.content[0].text.strip()
+        # Claude가 ```json ... ``` 블록으로 감싸 반환하는 경우 제거
+        raw = _re.sub(r'^```(?:json)?\s*', '', raw)
+        raw = _re.sub(r'\s*```$', '', raw).strip()
+        result = _json.loads(raw)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": f"전략 생성 실패: {e}"}), 500
+
+
 @app.route("/api/download_docx", methods=["POST"])
 def api_download_docx():
     data = request.get_json(force=True)
@@ -411,7 +525,20 @@ def api_download_docx():
         return jsonify({"error": "본문이 비어 있습니다."}), 400
     # 다운로드 본문에서만 미리보기 전용 고지문구 제거 (미리보기 화면은 그대로 유지)
     text = _strip_preview_only_notes(text)
-    blob = make_docx(text, title)
+
+    # M-08 / FR-30: 무료 체험 문서 워터마크 서버 사이드 삽입
+    watermark_text = None
+    doc_type_en = _normalize_doc_type(data.get("doc_type") or data.get("docType"))
+    if doc_type_en and doc_type_en in DOC_PRICES:
+        user_id = _gate_user_id()
+        access = check_document_access(user_id, doc_type_en)
+        if access.get("access_type") == "free_trial":
+            watermark_text = (
+                "본 문서는 내편문서 무료 체험 초안입니다. "
+                "실제 제출 전 결제 후 워터마크 없는 문서를 발급받으세요."
+            )
+
+    blob = make_docx(text, title, watermark_text=watermark_text)
     # 다운로드 파일명: 문서종류명_날짜시간.docx (예: 내용증명_20260614_1530.docx)
     filename = f"{title}_{datetime.now().strftime('%Y%m%d_%H%M')}.docx"
     return send_file(
@@ -575,6 +702,13 @@ def api_analyze_opponent():
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": f"분석 실패: {e}"}), 500
+
+
+@app.route("/api/user/trial_status", methods=["GET"])
+def api_trial_status():
+    """PRD §8.2: 무료 체험 잔여 상태 조회 (FreeTrialBanner 연동)."""
+    user_id = _gate_user_id()
+    return jsonify(get_trial_status(user_id))
 
 
 @app.route("/api/purchase", methods=["POST"])

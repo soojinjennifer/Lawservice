@@ -189,6 +189,85 @@ AccordionItem과 통합 불가 판단 → 기존 인라인 코드 유지.
 
 ---
 
+## Figma 재구성 문서화 작업 — 2026-06-14
+
+### 배경
+
+Phase 4(Figma Code Connect 연결)의 사전 작업으로, 현재 구현된 화면을
+Figma 컴포넌트 인스턴스로 재구성하기 위한 **명세 문서**를 작성했다.
+코드는 수정하지 않고(분석·문서화만), `CLAUDE.md`와 `ComponentsPlan.md`를 기준으로 진행했다.
+
+### 새로 만든 문서
+
+| 파일 | 내용 |
+|---|---|
+| `Figma_재구성_명세서.md` | 전체 화면(홈·대시보드·생성·마이페이지·결제·도움말·로그인·가입·Reset·FAQ) → Figma 컴포넌트 매핑. 화면별 코드파일/목적/섹션/사용 컴포넌트/variant·state/재구성 순서/주의사항 정리 |
+| `CREATE_SCREEN_FIGMA_IMPORT_GUIDE.md` | CreateScreen(1·2·3단계) 단독. HtmlToDesign raw import → 컴포넌트 인스턴스 교체 가이드. 매핑표·금지요소·작업순서·MCP 재읽기 프롬프트 포함 |
+
+### CreateScreen HtmlToDesign Import 실행 준비 (확인 완료)
+
+- **실행 방식**: npm 아님 → Flask. `python server.py` → `http://localhost:5001`
+- **경로**: 해시 라우팅 `#/create/1` `#/create/2` `#/create/3`, `create`는 **보호 라우트(로그인 필수)**
+- **핵심 제약**: 2·3단계는 `draftText`·`formData`가 컴포넌트 state라 **URL 직접 진입 시 본문이 비어** 캡처 불가
+- **결정한 방식**: **라이브 플로우(코드 수정 X) + 실제 테스트 계정 로그인**
+  - Step1 입력 → "초안 생성하기"(`/api/generate`, API 키 필요) → Step2 → "다음" → Step3 순서로 진행하며 각 상태에서 DOM 캡처
+- **Figma 배치**: raw = `05. Archive / HtmlToDesign Raw Import / CreateScreen`, 최종 = `04. Pages / CreateScreen / CreateStep1·2·3` (raw는 최종 Frame에 남기지 않음)
+
+### Git / 민감정보 처리
+
+- 오늘 변경된 **소스 코드는 이전 커밋 `ef36c4e`로 이미 푸시 완료** 상태였음(추가 변경 없음). 위 문서·에셋·PRD는 요청에 따라 **푸시하지 않고 로컬 보관**.
+- `.gitignore`에 `증거파일/` 추가 (카톡 증거·사업자등록증 등 개인정보가 공개 저장소에 올라가는 것 방지)
+- 커밋 `e636c48` (`chore: 증거파일/ .gitignore 추가`) — **로컬에만 보관, 미푸시**
+
+---
+
+## 건별 결제 + 전략 제안 기능 구현 — 2026-06-22
+
+### 작업 범위
+
+PRD v1.2 FR-24~FR-30 결제 플로우 및 내편 전략 제안 기능을 연동했다.
+
+### 변경 파일
+
+| 파일 | 내용 |
+|---|---|
+| `server.py` | `payment_routes.py` 블루프린트 등록, `/api/suggest_strategies` 엔드포인트 추가, FR-30 문서 접근 권한 게이트 적용 |
+| `payment_routes.py` | 건별 결제 API 라우트 (prepare / confirm / cancel / history / access-check) |
+| `static/js/api.js` | `_authHeaders()` · `_makeApiError()` 공통 헬퍼 추가, `window.LawAPI.payment` 객체(prepare/confirm/cancel/history/accessCheck) 추가, `suggestStrategies()` 추가 |
+| `static/js/auth_store.js` | `getUserId()` 메서드 추가 — X-User-Id 헤더 발급용 |
+| `static/js/create_screen.js` | `StrategyModal` 컴포넌트 추가(FR-24), `buildHighlightedDraft()` XSS-safe 줄 단위 diff 헬퍼 추가 |
+| `static/js/subscription_screen.js` | `PurchaseTable`을 실제 `GET /api/payment/history` API 연동으로 교체, `PAY_STATUS_META` 매핑, `StatusBox` 로딩/에러/빈 상태 처리 |
+| `static/js/ui/Modal.js` | `PaymentFlow`에 실제 결제 API 연동(FR-25), `step=fail` + `FAIL_MESSAGES` 실패 처리 추가(FR-27), 테스트 모드 배너 |
+| `static/css/styles.css` | StrategyModal, draft-highlight, payment-fail-step, payment-test-banner, btn-danger, 결제 내역 행 스타일 추가 |
+| `templates/index.html` | `PAYMENT_CONFIG` (testMode / clientKey / provider) 클라이언트 설정 주입 |
+
+### 구현된 PRD 기능
+
+| FR | 기능 | 상태 |
+|---|---|---|
+| FR-24 | 내편 전략 제안 — 초안 기반 AI 전략 2종 제안 + 직접 입력 | ✅ 완료 |
+| FR-25 | 결제 준비 — 서버 orderId·정가 발급 | ✅ 완료 |
+| FR-27 | 결제 실패 처리 — failType별 안내 + 재시도/닫기 분기 | ✅ 완료 |
+| FR-28 | 환불 API — POST /api/payment/cancel | ✅ 완료 |
+| FR-29 | 결제 내역 조회 — 실제 API 연동, 페이지네이션 지원 | ✅ 완료 |
+| FR-30 | 문서 접근 권한 게이트 — /api/generate 호출 전 결제 확인 | ✅ 완료 |
+
+### 결제 플로우 요약
+
+1. `openPaymentFlow({ docType, price })` 호출
+2. `confirm` 단계: PurchaseConfirmModal (문서 종류·금액·환불 안내)
+3. `pay` 단계: 결제 수단 선택 → `LawAPI.payment.prepare()` → `LawAPI.payment.confirm()`
+4. `success` / `fail` 단계: 결과 표시, 실패 시 failType별 메시지 + 재시도
+5. 테스트 모드(`PG_TEST_MODE=true`): TossPayments 팝업 없이 mock confirm 직접 호출
+
+### 주의사항
+
+- `payment_routes.py`는 Phase 1(mock/메모리) 기반 — 실 DB 연동은 Phase 2
+- `PG_CLIENT_KEY`, `PG_PROVIDER`, `PG_TEST_MODE` 환경변수 필요
+- 금액 불일치(`AMOUNT_MISMATCH`) 실패는 재시도 불가, 고객센터 안내만 표시
+
+---
+
 ## 다음 Claude Code 프롬프트
 
 OAuth dashboard 안착, 라우트 가드, TopNav 로그인 상태 표시까지 완료되었습니다.

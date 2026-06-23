@@ -104,7 +104,7 @@
 
 ### Button
 - variant: primary / secondary / ghost / danger / text
-- size: sm / md / lg
+- size: sm / md / lg /xl
 - state: default / hover / disabled / loading
 - icon: none / left / right
 - width: hug / fill

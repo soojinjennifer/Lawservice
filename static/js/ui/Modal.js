@@ -94,18 +94,90 @@ window.AppModalRoot = function AppModalRoot() {
 // 사용: window.openPaymentFlow({ docType, price, priceLabel, onSuccess })
 window.openPaymentFlow = function openPaymentFlow({ docType, price, priceLabel, onSuccess }) {
   function PaymentFlow({ closeModal }) {
-    const [step, setStep] = React.useState("confirm"); // confirm | pay | success
+    const [step, setStep] = React.useState("confirm"); // confirm | pay | success | fail
     const [method, setMethod] = React.useState("card");
     const [loading, setLoading] = React.useState(false);
+    const [failType, setFailType] = React.useState(null); // FR-27 실패 유형
 
-    const handlePay = () => {
+    const isTestMode = !!(window.PAYMENT_CONFIG && window.PAYMENT_CONFIG.testMode);
+
+    const handlePay = async () => {
       setLoading(true);
-      // 실제 API: POST /api/purchase
-      setTimeout(() => {
+      const forced = window.PAYMENT_CONFIG && window.PAYMENT_CONFIG._mockForceFail;
+      try {
+        // 1) 결제 준비 — 서버가 orderId·정가 발급 (FR-25)
+        const prep = await window.LawAPI.payment.prepare(docType);
+
+        // 2) 결제 승인.
+        //   · testMode/mock: TossPayments 팝업 없이 confirm API 직접 호출
+        //   · Phase 2 실연동: 여기서 TossPayments.requestPayment(팝업) 후 paymentKey 수령
+        const res = await window.LawAPI.payment.confirm({
+          paymentKey: prep.payment_key || null,
+          orderId: prep.order_id,
+          amount: prep.amount,
+          mockForceFail: forced || undefined,   // PRD §5.3 강제 실패 (개발용)
+        });
+
         setLoading(false);
-        setStep("success");
-      }, 1400);
+        if (res && res.success) {
+          setStep("success");
+        } else {
+          setFailType("NETWORK_ERROR");
+          setStep("fail");
+        }
+      } catch (e) {
+        setLoading(false);
+        // 서버가 failType을 내려주면 그대로, 없으면 코드/상태로 추정 (FR-27)
+        const ft = (e.body && e.body.failType)
+          || (e.code === "AMOUNT_MISMATCH" ? "AMOUNT_MISMATCH" : null)
+          || (e.status === 401 ? "USER_CANCEL" : "NETWORK_ERROR");
+        setFailType(ft);
+        setStep("fail");
+      }
     };
+
+    // FR-27 실패 유형별 안내 문구
+    const FAIL_MESSAGES = {
+      USER_CANCEL:     "결제가 취소되었습니다.",
+      LIMIT_EXCEEDED:  "결제 한도가 초과되었습니다. 다른 카드를 사용해주세요.",
+      CARD_ERROR:      "카드 정보를 확인해주세요.",
+      NETWORK_ERROR:   "일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+      AMOUNT_MISMATCH: "결제 정보에 오류가 발생했습니다. 고객센터에 문의해주세요.",
+    };
+
+    if (step === "fail") {
+      // 금액 불일치(서버 검증 실패)는 재시도 불가 — [닫기]만 제공
+      const canRetry = failType !== "AMOUNT_MISMATCH";
+      return (
+        <div className="payment-fail-step">
+          <div className="payment-fail-icon">
+            <Icon name="dismiss" size={28} color="var(--color-status-danger-fg)" />
+          </div>
+          <div className="payment-fail-title">결제가 완료되지 않았습니다</div>
+          <div className="payment-fail-message">
+            {FAIL_MESSAGES[failType] || FAIL_MESSAGES.NETWORK_ERROR}
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
+            {canRetry && (
+              <button
+                className="btn btn-primary btn-lg"
+                style={{ flex: 2 }}
+                onClick={() => { setFailType(null); setStep("confirm"); }}
+              >
+                <Icon name="arrowR" size={15} color="#fff" /> 다시 시도
+              </button>
+            )}
+            <button
+              className="btn btn-subtle btn-lg"
+              style={{ flex: 1 }}
+              onClick={closeModal}
+            >
+              닫기
+            </button>
+          </div>
+        </div>
+      );
+    }
 
     if (step === "success") {
       return (
@@ -136,6 +208,12 @@ window.openPaymentFlow = function openPaymentFlow({ docType, price, priceLabel, 
     if (step === "pay") {
       return (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {isTestMode && (
+            <div className="payment-test-banner">
+              <Icon name="bolt" size={14} color="var(--color-status-warning-fg)" filled />
+              <span>테스트 모드 — 실제 결제가 발생하지 않습니다</span>
+            </div>
+          )}
           <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-neutral-fg-2)", marginBottom: 4 }}>
             결제 수단 선택
           </div>

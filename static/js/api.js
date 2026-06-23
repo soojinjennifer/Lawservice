@@ -9,11 +9,30 @@ const DOC_TYPE_MAP = {
 };
 
 window.LawAPI = {
+  // 결제 권한 게이트 식별자(X-User-Id)를 모든 호출에 동봉 (Phase 1: Supabase user.id)
+  _authHeaders() {
+    const h = { "Content-Type": "application/json" };
+    try {
+      const uid = window.AuthStore && window.AuthStore.getUserId && window.AuthStore.getUserId();
+      if (uid) h["X-User-Id"] = uid;
+    } catch (_) {}
+    return h;
+  },
+
+  // 응답이 비정상이면 status/code를 보존한 Error를 던진다 (FR-30 403 분기용)
+  _makeApiError(res, data, fallback) {
+    const err = new Error((data && (data.message || data.error)) || fallback);
+    err.status = res.status;
+    err.code = data && data.error;       // PAYMENT_REQUIRED | REVISION_LIMIT_EXCEEDED 등
+    err.body = data;
+    return err;
+  },
+
   // POST /api/generate
   async generate({ docType, sender, receiver, caseInfo, timelineEvents, facts, request, evidence_list }) {
     const res = await fetch("/api/generate", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: this._authHeaders(),
       body: JSON.stringify({
         doc_type: DOC_TYPE_MAP[docType] || docType,
         sender, receiver,
@@ -24,21 +43,33 @@ window.LawAPI = {
         evidence_list: evidence_list || [],
       }),
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "초안 생성에 실패했습니다.");
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw this._makeApiError(res, data, "초안 생성에 실패했습니다.");
     return data.draft;
   },
 
   // POST /api/revise
-  async revise({ draft, revisionRequest }) {
+  async revise({ draft, revisionRequest, docType }) {
     const res = await fetch("/api/revise", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ draft, revision_request: revisionRequest }),
+      headers: this._authHeaders(),
+      body: JSON.stringify({ draft, revision_request: revisionRequest, doc_type: docType || null }),
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "수정에 실패했습니다.");
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw this._makeApiError(res, data, "수정에 실패했습니다.");
     return data.draft;
+  },
+
+  // POST /api/suggest_strategies — 초안 설득력 강화 전략 2종 제안 (FR-24)
+  async suggestStrategies(draft) {
+    const res = await fetch("/api/suggest_strategies", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ draft }),
+    });
+    if (!res.ok) throw new Error("전략 생성 실패");
+    const data = await res.json();
+    return data.strategies; // [{title, description}]
   },
 
   // POST /api/upload_evidence — 증거 파일 업로드 + 명명규칙 저장 (multipart)
@@ -66,11 +97,11 @@ window.LawAPI = {
   },
 
   // POST /api/download_docx — triggers browser download
-  async downloadDocx({ text, title }) {
+  async downloadDocx({ text, title, docType }) {
     const res = await fetch("/api/download_docx", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, title }),
+      body: JSON.stringify({ text, title, doc_type: docType || null }),
     });
     if (!res.ok) {
       const data = await res.json();
@@ -95,5 +126,71 @@ window.LawAPI = {
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
+  },
+};
+
+// ── 건별 결제 API (PRD 건별결제 v1.0 §7, FR-25~FR-30) ───────────
+// 서버 라우트(payment_routes.py)와 1:1 매핑. status/code 보존 에러 throw.
+window.LawAPI.payment = {
+  async _post(path, body) {
+    const res = await fetch(path, {
+      method: "POST",
+      headers: window.LawAPI._authHeaders(),
+      body: JSON.stringify(body || {}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw window.LawAPI._makeApiError(res, data, "결제 처리에 실패했습니다.");
+    return data;
+  },
+
+  // POST /api/payment/prepare → { order_id, amount, order_name, doc_type, client_key }
+  prepare(docType) {
+    return this._post("/api/payment/prepare", { doc_type: docType });
+  },
+
+  // POST /api/payment/confirm → { success, payment_id, document_access_id, receipt_url }
+  // mockForceFail: 개발용 강제 실패 (PRD §5.3) — failType 문자열 또는 true
+  confirm({ paymentKey, orderId, amount, mockForceFail }) {
+    const body = { payment_key: paymentKey, order_id: orderId, amount };
+    if (mockForceFail) body._mock_force_fail = mockForceFail;
+    return this._post("/api/payment/confirm", body);
+  },
+
+  // POST /api/payment/cancel (환불, FR-28)
+  cancel(paymentId, reason) {
+    return this._post("/api/payment/cancel", { payment_id: paymentId, cancel_reason: reason });
+  },
+
+  // GET /api/payment/history (FR-29) → { total, page, per_page, items: [...] }
+  async history({ page, perPage, status } = {}) {
+    const qs = new URLSearchParams();
+    if (page) qs.set("page", page);
+    if (perPage) qs.set("per_page", perPage);
+    if (status) qs.set("status", status);
+    const url = "/api/payment/history" + (qs.toString() ? "?" + qs.toString() : "");
+    const res = await fetch(url, { headers: window.LawAPI._authHeaders() });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw window.LawAPI._makeApiError(res, data, "결제 내역 조회에 실패했습니다.");
+    return data;
+  },
+
+  // GET /api/payment/access-check (FR-30) → { hasAccess, accessType, isFreeTrialEligible, revisionsRemaining }
+  async accessCheck(docType) {
+    const res = await fetch("/api/payment/access-check?docType=" + encodeURIComponent(docType), {
+      headers: window.LawAPI._authHeaders(),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw window.LawAPI._makeApiError(res, data, "접근 권한 확인에 실패했습니다.");
+    return data;
+  },
+
+  // GET /api/user/trial_status (PRD §8.2) → { doc_type, free_trial_used, revision_remaining }
+  async trialStatus() {
+    const res = await fetch("/api/user/trial_status", {
+      headers: window.LawAPI._authHeaders(),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw window.LawAPI._makeApiError(res, data, "무료 체험 상태 조회에 실패했습니다.");
+    return data;
   },
 };
