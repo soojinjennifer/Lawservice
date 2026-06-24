@@ -82,7 +82,6 @@ const SAMPLE_TIMELINE = {
   notice:   [{ date: "2025-11-15", event: "물품 납품 계약 체결" },
              { date: "2025-11-28", event: "물품 납품 완료" },
              { date: "2025-12-15", event: "약정 지급기일 경과, 미입금" }],
-  appeal:   [{ date: "2025-08-01", event: "1심 판결 선고 (청구 기각)" }],
   brief:    [{ date: "2025-09-12", event: "매매계약 체결" },
              { date: "2026-01-20", event: "잔금 미지급" }],
   appeal:   [{ date: "2025-06-10", event: "1심 변론 종결" },
@@ -206,11 +205,14 @@ function StepInput({ docType, setDocType, onSubmit, evidenceFiles = [], onEviden
             필수 항목은 <span style={{ color: "var(--color-status-danger-fg)" }}>*</span>로 표시되어 있어요.
           </p>
         </div>
-        {loadDraft() && (
-          <span style={{ fontSize: 12, color: "var(--color-neutral-fg-3)", display: "flex", alignItems: "center", gap: 4 }}>
-            <Icon name="clock" size={13} color="var(--color-neutral-fg-3)" /> 임시 저장 복원됨
-          </span>
-        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {loadDraft() && (
+            <span style={{ fontSize: 12, color: "var(--color-neutral-fg-3)", display: "flex", alignItems: "center", gap: 4 }}>
+              <Icon name="clock" size={13} color="var(--color-neutral-fg-3)" /> 임시 저장 복원됨
+            </span>
+          )}
+          <Btn variant="ghost" size="sm" icon="save" onClick={handleTempSave}>임시 저장</Btn>
+        </div>
       </div>
 
       {/* ① 문서 종류 */}
@@ -292,6 +294,27 @@ function StepInput({ docType, setDocType, onSubmit, evidenceFiles = [], onEviden
         </div>
       </section>
 
+      {/* 증거 자료 업로드 (FR-17) — 폼 인라인 배치 (EvidenceUploader 공통 컴포넌트 재사용) */}
+      <section style={{ marginBottom: 32 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px", display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ width: 24, height: 24, borderRadius: 6, background: "var(--brand-light)", color: "var(--brand-rest)", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+            <Icon name="attachment" size={14} />
+          </span>
+          증거 자료
+        </h3>
+        <p className="muted" style={{ fontSize: 12, margin: "0 0 12px" }}>
+          이미지·PDF를 올리면 AI가 날짜를 추출하고 문서 하단 「입 증 방 법」에 정리합니다.
+        </p>
+        <EvidenceUploader
+          mode="input"
+          files={evidenceFiles}
+          onUpload={onEvidenceUpload}
+          onRemove={onEvidenceRemove}
+          aiExtract={true}
+          multiple={true}
+        />
+      </section>
+
       {/* 상대방 문서 분석 (FR-18, 19) — 반박문 전용 */}
       {docType === "rebuttal" && (
         <section style={{ marginBottom: 32 }}>
@@ -336,8 +359,8 @@ function StepInput({ docType, setDocType, onSubmit, evidenceFiles = [], onEviden
       )}
 
       <div className="create-bottom-bar">
-        <Btn variant="ghost" size="lg" icon="save" onClick={handleTempSave}>임시 저장</Btn>
-        <Btn variant="primary" size="lg" icon="sparkle" onClick={handleSubmit}>초안 생성하기</Btn>
+        <Btn variant="secondary" size="lg" icon="save" onClick={handleTempSave}>임시 저장</Btn>
+        <Btn variant="primary" size="lg" onClick={handleSubmit}>+ 초안 만들기</Btn>
       </div>
     </div>
   );
@@ -435,7 +458,9 @@ function StrategyModal({ draftText, docType, onConfirm, onClose }) {
 }
 
 // ── STEP 2: 초안 미리보기 ─────────────────────────────────────
-function StepPreview({ docType, draftText, generating, genError, onBack, onNext, onRegenerate, onDownload, onStrategyRevise, evidenceList = [] }) {
+function StepPreview({ docType, draftText, generating, genError, onBack, onNext, onRegenerate, onDownload, onStrategyRevise, evidenceList = [],
+  chatMessages = [], sendRevision, chatLoading = false, chatRiskChecking = false,
+  handleRiskCheck, handleApplySuggestion, handleDismissWarning, quickSuggestions = [] }) {
   const onStrategyPropose = () => {
     window.AppModal.open({
       title: "내편 전략 제안",
@@ -456,16 +481,6 @@ function StepPreview({ docType, draftText, generating, genError, onBack, onNext,
 
   return (
     <div className="create-pane-preview" style={{ minHeight: 720 }}>
-      <AIAssistPanel
-        messages={chatMessages || []}
-        onSend={sendRevision || (() => {})}
-        loading={chatLoading || false}
-        riskChecking={chatRiskChecking || false}
-        onRiskCheck={handleRiskCheck || (() => {})}
-        onApplySuggestion={handleApplySuggestion || (() => {})}
-        onDismissWarning={handleDismissWarning || (() => {})}
-        quickSuggestions={quickSuggestions || []}
-      />
       <div style={{ marginBottom: 20 }}>
         <h2 className="section-title">초안 미리보기</h2>
         <p className="muted" style={{ fontSize: 13, margin: "6px 0 0" }}>
@@ -573,19 +588,6 @@ function StepPreview({ docType, draftText, generating, genError, onBack, onNext,
             </div>
           </div>
 
-          {/* 전폭 증거 자료 행 (읽기 전용 EvidenceUploader 재사용) */}
-          <section className="create-evidence-row">
-            <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px", display: "flex", alignItems: "center", gap: 6 }}>
-              <Icon name="attachment" size={14} color="var(--color-neutral-fg-2)" /> 증거 자료
-            </h3>
-            <EvidenceUploader
-              mode="preview"
-              readonly={true}
-              showDownloadButton={true}
-              evidenceList={evidenceList}
-              aiExtract={false}
-            />
-          </section>
         </React.Fragment>
       )}
     </div>
@@ -769,8 +771,6 @@ function StepEdit({ docType, draftText, setDraftText, onBack, onDownload, onRege
 
   return (
     <div className="create-pane-preview" style={{ minHeight: 720 }}>
-      <AIAssistPanel disabled={true} />
-
       {/* 헤더 */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
         <h2 className="section-title">초안 다운로드</h2>
@@ -894,19 +894,6 @@ function StepEdit({ docType, draftText, setDraftText, onBack, onDownload, onRege
         </div>
       </div>
 
-      {/* 전폭 증거 자료 행 (읽기 전용 EvidenceUploader 재사용) */}
-      <section className="create-evidence-row">
-        <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px", display: "flex", alignItems: "center", gap: 6 }}>
-          <Icon name="attachment" size={14} color="var(--color-neutral-fg-2)" /> 증거 자료
-        </h3>
-        <EvidenceUploader
-          mode="preview"
-          readonly={true}
-          showDownloadButton={true}
-          evidenceList={evidenceList}
-          aiExtract={false}
-        />
-      </section>
     </div>
   );
 }
@@ -1214,6 +1201,14 @@ window.CreateScreen = function CreateScreen({ initialStep = 1, initialDocType = 
               onRegenerate={() => formData && generate(formData)}
               onDownload={handleDownload}
               onStrategyRevise={handleStrategyRevise}
+              chatMessages={chatMessages}
+              sendRevision={sendRevision}
+              chatLoading={chatLoading}
+              chatRiskChecking={chatRiskChecking}
+              handleRiskCheck={handleRiskCheck}
+              handleApplySuggestion={handleApplySuggestion}
+              handleDismissWarning={handleDismissWarning}
+              quickSuggestions={QUICK_SUGGESTIONS}
             />
           )}
           {step === 3 && (
@@ -1231,60 +1226,6 @@ window.CreateScreen = function CreateScreen({ initialStep = 1, initialDocType = 
           )}
         </div>
 
-        {/* 증거 자료 하단 공통 Container */}
-        {(step === 1 || evidenceFiles.some(f => f.status === "done" || f.status === "uploading")) && (
-          <div className="evidence-bottom-container">
-            <h3>
-              <Icon name="attachment" size={14} color="var(--color-neutral-fg-2)" />
-              증거 자료
-            </h3>
-            {/* Step1: EvidenceUploader dropzone */}
-            {step === 1 && (
-              <EvidenceUploader
-                mode="input"
-                files={evidenceFiles}
-                onUpload={handleEvidenceUpload}
-                onRemove={handleEvidenceRemove}
-                aiExtract={true}
-                multiple={true}
-              />
-            )}
-            {/* Step2·3: doctype-card 스타일 카드 그리드 */}
-            {step > 1 && (
-              <div className="evidence-card-grid">
-                {evidenceFiles.filter(f => f.status === "done").map((item, i) => {
-                  const evidenceNo = item.evidenceNo || `첨부 제${i+1}호`;
-                  const filename = item.originalName || item.name || "증거자료";
-                  const downloadUrl = item.downloadUrl || "";
-                  const originalIdx = evidenceFiles.findIndex(ef => ef.id ? ef.id === item.id : ef === item);
-                  return (
-                    <div key={item.id || i} className="evidence-file-card">
-                      <button
-                        className="evidence-file-card-close"
-                        onClick={() => handleEvidenceRemove(originalIdx >= 0 ? originalIdx : i)}
-                        aria-label="삭제"
-                      >
-                        <Icon name="dismiss" size={10} color="var(--color-neutral-fg-3)" />
-                      </button>
-                      <Badge variant="info">{evidenceNo}</Badge>
-                      <div className="evidence-file-name">{filename}</div>
-                      {downloadUrl && (
-                        <a
-                          href={downloadUrl}
-                          className="btn btn-sm"
-                          download
-                          style={{ marginTop: "auto", display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11 }}
-                        >
-                          <Icon name="download" size={11} /> 다운로드
-                        </a>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
       </div>
       <LegalNotice />
       <SiteFooter />

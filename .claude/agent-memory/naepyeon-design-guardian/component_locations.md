@@ -11,6 +11,7 @@ All under `C:\Users\sooji\OneDrive\LawService\static\js\`:
 - document/: StepIndicator.js, FormSection.js (FormSection/TimelineRowEditor), DocumentTypeCard.js (DocumentTypeCard/DocumentTypePicker), DocumentPreview.js, EvidenceUploader.js, OpponentDocAnalysis.js
 - payment/: PaymentSummaryCard.js (PaymentSummaryCard/PaymentCardGrid)
 - dashboard/: CaseProgressCard
+- feedback/: LoadingState.js, EmptyState.js, ErrorState.js, Pagination.js (all window.LoadingState/EmptyState/ErrorState/Pagination; context prop = list|preview|payment|upload; EmptyState/ErrorState reuse window.Btn; ErrorState uses 'bolt' icon since no 'warning' glyph). CSS in styles.css `.feedback-state*` + `.pagination*`. subscription_screen.js StatusBox is an OLDER inline duplicate that can migrate to these.
 - layout/: SiteFooter.js, AuthSplitLayout.js
 - components.js: TopNav, ServiceMark, LegalNotice, Steps, DocTypeMeta
 

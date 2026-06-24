@@ -4,6 +4,7 @@ const DOC_TYPE_MAP = {
   notice:   "내용증명",
   opinion:  "소견서",
   brief:    "준비서면",
+  rebuttal: "상대방 반박문",
   appeal:   "항소이유서",
   contract: "계약서",
 };
@@ -53,7 +54,7 @@ window.LawAPI = {
     const res = await fetch("/api/revise", {
       method: "POST",
       headers: this._authHeaders(),
-      body: JSON.stringify({ draft, revision_request: revisionRequest, doc_type: docType || null }),
+      body: JSON.stringify({ draft, revision_request: revisionRequest, doc_type: DOC_TYPE_MAP[docType] || docType || null }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw this._makeApiError(res, data, "수정에 실패했습니다.");
@@ -191,6 +192,69 @@ window.LawAPI.payment = {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw window.LawAPI._makeApiError(res, data, "무료 체험 상태 조회에 실패했습니다.");
+    return data;
+  },
+};
+
+// ── 나의 문서 / 진행현황 DB 연동 API (설계 PRD §3, FR-10·FR-16) ───
+// 서버 라우트(server.py /api/documents*)와 1:1 매핑. status/code 보존 에러 throw.
+window.LawAPI.documents = {
+  // GET /api/documents → { items, total, page, per_page }
+  async list(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.page)     qs.set("page", params.page);
+    if (params.perPage)  qs.set("per_page", params.perPage);
+    if (params.docType)  qs.set("doc_type", params.docType);
+    if (params.status)   qs.set("status", params.status);
+    if (params.q)        qs.set("q", params.q);
+    if (params.sort)     qs.set("sort", params.sort);
+    const url = "/api/documents" + (qs.toString() ? "?" + qs.toString() : "");
+    const res = await fetch(url, { headers: window.LawAPI._authHeaders() });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw window.LawAPI._makeApiError(res, data, "문서 목록 조회에 실패했습니다.");
+    return data;
+  },
+
+  // GET /api/documents/stats → { this_month, saved, in_progress, free_trial_remaining }
+  async stats() {
+    const res = await fetch("/api/documents/stats", { headers: window.LawAPI._authHeaders() });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw window.LawAPI._makeApiError(res, data, "문서 통계 조회에 실패했습니다.");
+    return data;
+  },
+
+  // POST /api/documents → { id, doc_type, status, current_step }
+  async create(docType) {
+    const res = await fetch("/api/documents", {
+      method: "POST",
+      headers: window.LawAPI._authHeaders(),
+      body: JSON.stringify({ doc_type: docType }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw window.LawAPI._makeApiError(res, data, "문서 생성에 실패했습니다.");
+    return data;
+  },
+
+  // PATCH /api/documents/<id> → 갱신된 row
+  async update(id, fields) {
+    const res = await fetch("/api/documents/" + encodeURIComponent(id), {
+      method: "PATCH",
+      headers: window.LawAPI._authHeaders(),
+      body: JSON.stringify(fields || {}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw window.LawAPI._makeApiError(res, data, "문서 수정에 실패했습니다.");
+    return data;
+  },
+
+  // DELETE /api/documents/<id> (soft-delete) → { success, id }
+  async remove(id) {
+    const res = await fetch("/api/documents/" + encodeURIComponent(id), {
+      method: "DELETE",
+      headers: window.LawAPI._authHeaders(),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw window.LawAPI._makeApiError(res, data, "문서 삭제에 실패했습니다.");
     return data;
   },
 };

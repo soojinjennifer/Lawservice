@@ -384,3 +384,190 @@ Naver 관련 코드는 절대 추가하거나 수정하지 마세요.
 4. 변경할 파일 목록을 보여주세요.
 5. 각 파일에서 무엇을 수정할지 짧게 설명해주세요.
 6. 내가 승인하면 그때 코드를 수정해주세요.
+
+
+  git pull origin main
+
+  한 번만 실행하면 아래 모든 것이 자동으로 내려옵니다.
+
+  ---
+  push된 주요 파일
+
+  ┌────────────────┬────────────────────────────────────────────────────────────────────────────────────────┐
+  │      분류      │                                          파일                                          │
+  ├────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 에이전트       │ .claude/agents/naepyeon-design-guardian.md,                                            │
+  │                │ .claude/agents/naepyoen-code-implementer.md                                            │
+  ├────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 슬래시 커맨드  │ .claude/commands/plan.md, .claude/commands/design.md, .claude/commands/develope.md     │
+  ├────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 에이전트       │ .claude/agent-memory/naepyeon-design-guardian/,                                        │
+  │ 메모리         │ .claude/agent-memory/naepyoen-code-implementer/                                        │
+  ├────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 결제 코드      │ payment_routes.py, payment/, migrations/001_payments.sql                               │
+  ├────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 수정 코드      │ server.py, static/js/api.js, static/js/ui/Modal.js, static/js/subscription_screen.js   │
+  ├────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
+  │ PRD 문서       │ PRD/ 마크다운 파일 전체                                                                │
+  ├────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 폰트·이미지    │ static/fonts/NanumSquare*, static/images/help_step*.png                                │
+  └────────────────┴────────────────────────────────────────────────────────────────────────────────────────┘
+
+  ---
+  참고: 다른 컴퓨터에서 에이전트 사용 조건
+
+  .claude/commands/와 .claude/agents/는 git으로 sync되지만, oh-my-claudecode 플러그인은 각 컴퓨터에서 별도
+  설치가 필요합니다. Claude Code 설치 후 setup omc를 실행하면 /plan, /design, /develope 커맨드가 활성화됩니다.
+
+✻ Cooked for 6m 7s
+
+※ recap: 결제 기능 구현 및 CreateScreen 디자인 원복 작업을 완료하고 git push까지 마쳤습니다. 다른 컴퓨터에서 
+        8799d02..5de1601  main -> main
+
+● Push 완료. 최종 상태를 확인합니다.
+
+● Bash(cd "C:/Users/sooji/OneDrive/LawService" && git log --oneline -6)
+  ⎿  5de1601 Merge remote-tracking branch 'origin/main'
+     408754f feat: 결제 게이트·에이전트 설정·디자인 원복 통합 커밋
+     8799d02 chore: PRD·결제·디자인·폰트·에이전트 설정 파일 추가
+     … +6 lines (ctrl+o to expand)
+
+● Push 완료됐습니다.
+
+  ---
+  완료 요약
+
+  커밋 408754f → 머지 5de1601 → push 완료
+
+  다른 컴퓨터에서 sync 방법
+
+  git pull origin main
+
+  한 번만 실행하면 아래 모든 것이 자동으로 내려옵니다.
+
+  ---
+  push된 주요 파일
+
+  ┌─────────────┬───────────────────────────────────────────────────────┐
+  │    분류     │                         파일                          │
+  ├─────────────┼───────────────────────────────────────────────────────┤
+  │ 에이전트    │ .claude/agents/naepyeon-design-guardian.md,           │
+  │             │ .claude/agents/naepyoen-code-implementer.md           │
+  ├─────────────┼───────────────────────────────────────────────────────┤
+  │ 슬래시      │ .claude/commands/plan.md, .claude/commands/design.md, │
+  │ 커맨드      │  .claude/commands/develope.md                         │
+  ├─────────────┼───────────────────────────────────────────────────────┤
+  │ 에이전트    │ .claude/agent-memory/naepyeon-design-guardian/,       │
+  │ 메모리      │ .claude/agent-memory/naepyoen-code-implementer/       │
+  ├─────────────┼───────────────────────────────────────────────────────┤
+  │ 결제 코드   │ payment_routes.py, payment/,                          │
+  │             │ migrations/001_payments.sql                           │
+  ├─────────────┼───────────────────────────────────────────────────────┤
+  │ 수정 코드   │ server.py, static/js/api.js, static/js/ui/Modal.js,   │
+  │             │ static/js/subscription_screen.js                      │
+  ├─────────────┼───────────────────────────────────────────────────────┤
+  │ PRD 문서    │ PRD/ 마크다운 파일 전체                               │
+  ├─────────────┼───────────────────────────────────────────────────────┤
+  │ 폰트·이미지 │ static/fonts/NanumSquare*,                            │
+  │             │ static/images/help_step*.png                          │
+  └─────────────┴───────────────────────────────────────────────────────┘
+
+  ---
+  참고: 다른 컴퓨터에서 에이전트 사용 조건
+
+  .claude/commands/와 .claude/agents/는 git으로 sync되지만, oh-my-claudecode
+  플러그인은 각 컴퓨터에서 별도 설치가 필요합니다. Claude Code 설치 후
+  setup omc를 실행하면 /plan, /design, /develope 커맨드가 활성화됩니다.
+  ├─────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 슬래시 커맨드   │ .claude/commands/plan.md, .claude/commands/design.md, .claude/commands/develope.md              │
+  ├─────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 에이전트 메모리 │ .claude/agent-memory/naepyeon-design-guardian/, .claude/agent-memory/naepyoen-code-implementer/ │
+  │ PRD 문서        │ PRD/ 마크다운 파일 전체                                                                         │
+  ├─────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 폰트·이미지     │ static/fonts/NanumSquare*, static/images/help_step*.png                                         │
+  └─────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  ---
+  참고: 다른 컴퓨터에서 에이전트 사용 조건
+
+  .claude/commands/와 .claude/agents/는 git으로 sync되지만, oh-my-claudecode 플러그인은 각 컴퓨터에서 별도 설치가 필요합니다. Claude Code 설치 후 setup omc를 실행하면 /plan, /design, /develope 커맨드가 활성화됩니다.
+
+
+● Bash(cd "C:/Users/sooji/OneDrive/LawService" && git fetch origin main &&
+      git merge -X ours origin/main --no-edit 2>&1)
+  ⎿  From https://github.com/soojinjennifer/Lawservice
+      * branch            main       -> FETCH_HEAD
+     Auto-merging .claude/agent-memory/naepyeon-design-guardian/figma-c
+     … +56 lines (ctrl+o to expand)
+
+● 충돌 없이 auto-merge 완료. 이제 push합니다.
+
+● Bash(cd "C:/Users/sooji/OneDrive/LawService" && git push origin main 2>&1)
+  ⎿  To https://github.com/soojinjennifer/Lawservice.git
+        8799d02..5de1601  main -> main
+
+● Push 완료. 최종 상태를 확인합니다.
+
+● Bash(cd "C:/Users/sooji/OneDrive/LawService" && git log --oneline -6)
+  ⎿  5de1601 Merge remote-tracking branch 'origin/main'
+     408754f feat: 결제 게이트·에이전트 설정·디자인 원복 통합 커밋
+     8799d02 chore: PRD·결제·디자인·폰트·에이전트 설정 파일 추가
+     … +6 lines (ctrl+o to expand)
+
+● Push 완료됐습니다.
+
+  ---
+  완료 요약
+
+  커밋 408754f → 머지 5de1601 → push 완료
+
+  다른 컴퓨터에서 sync 방법
+
+  git pull origin main
+
+  한 번만 실행하면 아래 모든 것이 자동으로 내려옵니다.
+
+  ---
+  push된 주요 파일
+
+  ┌─────────────┬───────────────────────────────────────────────────────┐
+  │    분류     │                         파일                          │
+  ├─────────────┼───────────────────────────────────────────────────────┤
+  │ 에이전트    │ .claude/agents/naepyeon-design-guardian.md,           │
+  │             │ .claude/agents/naepyoen-code-implementer.md           │
+  ├─────────────┼───────────────────────────────────────────────────────┤
+  │ 슬래시      │ .claude/commands/plan.md, .claude/commands/design.md, │
+  │ 커맨드      │  .claude/commands/develope.md                         │
+  ├─────────────┼───────────────────────────────────────────────────────┤
+  │ 에이전트    │ .claude/agent-memory/naepyeon-design-guardian/,       │
+  │ 메모리      │ .claude/agent-memory/naepyoen-code-implementer/       │
+  ├─────────────┼───────────────────────────────────────────────────────┤
+  │ 결제 코드   │ payment_routes.py, payment/,                          │
+  │             │ migrations/001_payments.sql                           │
+  ├─────────────┼───────────────────────────────────────────────────────┤
+  │ 수정 코드   │ server.py, static/js/api.js, static/js/ui/Modal.js,   │
+  │             │ static/js/subscription_screen.js                      │
+  ├─────────────┼───────────────────────────────────────────────────────┤
+  │ PRD 문서    │ PRD/ 마크다운 파일 전체                               │
+  ├─────────────┼───────────────────────────────────────────────────────┤
+  │ 폰트·이미지 │ static/fonts/NanumSquare*,                            │
+  │             │ static/images/help_step*.png                          │
+  └─────────────┴───────────────────────────────────────────────────────┘
+
+  ---
+  ├─────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ PRD 문서        │ PRD/ 마크다운 파일 전체                                                                         │
+  ├─────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 폰트·이미지     │ static/fonts/NanumSquare*, static/images/help_step*.png                                         │
+  └─────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  ---
+  참고: 다른 컴퓨터에서 에이전트 사용 조건
+
+  .claude/commands/와 .claude/agents/는 git으로 sync되지만, oh-my-claudecode 플러그인은 각 컴퓨터에서 별도 설치가 필요합니다. Claude Code 설치 후 setup omc를 실행하면 /plan, /design, /develope 커맨드가 활성화됩니다.
+
+✻ Cooked for 6m 7s
+
+※ recap: 결제 기능 구현 및 CreateScreen 디자인 원복 작업을 완료하고 git push까지 마쳤습니다. 다른 컴퓨터에서 `git pull origin main`으로 에이전트 설정과 코드를 동기화하면 됩니다.
+
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────

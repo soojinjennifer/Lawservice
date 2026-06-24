@@ -841,6 +841,18 @@ input, textarea, select { font: inherit; }
 .create-pane-form { background: #fff; padding: 32px 40px; }
 .create-pane-preview { background: var(--color-neutral-bg-alt); padding: 32px 40px; }
 
+/* ── Step1 하단 버튼 바 (Figma node 68:6201 기준) ───────────────── */
+.create-bottom-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 40px;
+  margin: 32px -40px -32px;
+  background: #fff;
+  border-top: 1px solid #D1D1D1;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
 /* ── Timeline rows (사건 경위) ───────────────────────────────── */
 .timeline-rows { display: flex; flex-direction: column; gap: 8px; }
 .timeline-row {
@@ -1481,4 +1493,42 @@ input, textarea, select { font: inherit; }
 @media (max-width: 960px) {
   .create-edit-layout { grid-template-columns: 1fr; }
   .create-edit-layout .create-chat-col .chat-panel { height: 480px; }
+}
+
+/* ── feedback components (Empty / Loading / Error / Pagination) ───── */
+.feedback-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; padding: 40px 24px; text-align: center;
+  color: var(--color-neutral-fg-3);
+}
+.feedback-state-inline { padding: 20px 16px; }
+.feedback-state-icon {
+  width: 52px; height: 52px; border-radius: 999px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--brand-light); color: var(--brand-rest);
+}
+.feedback-state-msg { font-size: 13px; font-weight: 600; }
+.feedback-state-action { margin-top: 4px; }
+.feedback-state-error .feedback-state-icon {
+  background: var(--color-status-danger-bg, var(--brand-light));
+  color: var(--color-status-danger-fg, var(--brand-rest));
+}
+
+.pagination {
+  display: flex; align-items: center; justify-content: center;
+  gap: 4px; padding: 16px 0;
+}
+.pagination-btn, .pagination-num {
+  min-width: 32px; height: 32px; padding: 0 8px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--color-neutral-stroke-2);
+  border-radius: 6px; background: transparent;
+  font-size: 13px; font-weight: 600; color: var(--color-neutral-fg-2);
+  cursor: pointer; transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.pagination-btn:hover:not(:disabled),
+.pagination-num:hover { background: var(--brand-light); border-color: var(--brand-light-2); color: var(--brand-rest); }
+.pagination-btn:disabled { opacity: 0.4; cursor: default; }
+.pagination-num.is-current {
+  background: var(--brand-rest); border-color: var(--brand-rest); color: #fff;
 }

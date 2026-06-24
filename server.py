@@ -67,6 +67,76 @@ def _gate_user_id():
     return uid or "anonymous"
 
 
+# ── Supabase 클라이언트 (documents 테이블 연동, 설계 PRD §2~3) ─────────
+#
+# [수동 작업 안내] 아래 DDL 을 Supabase 대시보드 SQL Editor 에서 1회 실행해
+# documents 테이블·RLS·트리거를 생성해야 합니다. (서버는 테이블을 만들지 않음)
+#
+#   create table public.documents (
+#     id            uuid primary key default gen_random_uuid(),
+#     user_id       uuid not null references auth.users(id) on delete cascade,
+#     doc_type      text not null check (doc_type in ('notice','brief','rebuttal')),
+#     title         text not null default '(제목 없음)',
+#     status        text not null default 'draft'
+#                     check (status in ('draft','generated','in_review','saved','delivered','deleted')),
+#     current_step  smallint not null default 1 check (current_step between 1 and 3),
+#     input_data    jsonb,
+#     draft_text    text,
+#     revision_count smallint not null default 0,
+#     created_at    timestamptz not null default now(),
+#     updated_at    timestamptz not null default now()
+#   );
+#   alter table public.documents enable row level security;
+#   create policy "own documents" on public.documents
+#     using (auth.uid() = user_id) with check (auth.uid() = user_id);
+#   create or replace function update_updated_at()
+#   returns trigger language plpgsql as $$
+#   begin new.updated_at = now(); return new; end; $$;
+#   create trigger documents_updated_at
+#     before update on public.documents
+#     for each row execute function update_updated_at();
+#
+# [인증 경계 — Phase 1]
+#   서버는 JWT 가 아닌 X-User-Id 헤더로 사용자를 식별한다(_gate_user_id).
+#   anon key 클라이언트로는 RLS auth.uid() 를 만족시킬 수 없으므로, 모든 쿼리에
+#   명시적으로 .eq("user_id", user_id) 필터를 걸어 1차 경계로 삼는다.
+#   RLS 는 Phase 2(사용자 JWT 전달 또는 service-role 키)에서 2차 방어로 활성화한다.
+
+_SUPABASE_CLIENT = None
+
+
+def _get_supabase():
+    """documents 테이블용 Supabase 클라이언트(싱글턴). 미설정 시 None 반환."""
+    global _SUPABASE_CLIENT
+    if _SUPABASE_CLIENT is not None:
+        return _SUPABASE_CLIENT
+    url = (os.environ.get("SUPABASE_URL") or "").strip()
+    key = (os.environ.get("SUPABASE_SERVICE_KEY")
+           or os.environ.get("SUPABASE_ANON_KEY") or "").strip()
+    if not url or not key:
+        return None
+    # .env 의 URL 에 스킴이 없을 수 있으므로 보정
+    if not url.startswith("http"):
+        url = "https://" + url
+    try:
+        from supabase import create_client
+        _SUPABASE_CLIENT = create_client(url, key)
+    except Exception:
+        return None
+    return _SUPABASE_CLIENT
+
+
+# documents 목록 응답에서 제외할 무거운 필드 (설계 PRD §3.2)
+_DOC_LIST_COLUMNS = (
+    "id,doc_type,title,status,current_step,revision_count,created_at,updated_at"
+)
+_VALID_DOC_TYPES = {"notice", "brief", "rebuttal"}
+_VALID_DOC_STATUS = {"draft", "generated", "in_review", "saved", "delivered", "deleted"}
+_PATCHABLE_FIELDS = {
+    "title", "status", "current_step", "input_data", "draft_text", "revision_count",
+}
+
+
 # ── 한글(East Asian) 폰트 적용 헬퍼 ──────────────────────────
 def _set_korean_font(run, font_name: str) -> None:
     run.font.name = font_name
@@ -376,6 +446,9 @@ def api_generate():
         return jsonify({"error": "서버에 Anthropic API 키가 설정되지 않았습니다. .env 파일을 확인해 주세요."}), 500
 
     doc_type = data.get("doc_type")
+    # 영문 키(notice/brief/rebuttal)가 그대로 오는 경우 한글로 변환 (방어적 처리)
+    _EN_TO_KOR = {"notice": "내용증명", "brief": "준비서면", "rebuttal": "상대방 반박문"}
+    doc_type = _EN_TO_KOR.get(doc_type, doc_type)
     if doc_type not in DOC_TEMPLATES:
         return jsonify({"error": f"알 수 없는 문서 종류: {doc_type}"}), 400
     if not (data.get("facts") or "").strip():
@@ -731,6 +804,216 @@ def api_purchase():
         "method": method,
         "message": "구매가 완료되었습니다.",
     })
+
+
+# ── 나의 문서 / 진행현황 DB 연동 API (설계 PRD §3, FR-10·FR-16) ─────
+#
+# 5종: GET /api/documents, GET /api/documents/stats,
+#      POST /api/documents, PATCH /api/documents/<id>, DELETE /api/documents/<id>
+# 공통: _gate_user_id() 인증 게이트 + .eq("user_id", user_id) 소유권 필터.
+
+def _require_login():
+    """로그인 사용자 id 반환. 미인증('anonymous')이면 None."""
+    uid = _gate_user_id()
+    return None if uid == "anonymous" else uid
+
+
+@app.route("/api/documents", methods=["GET"])
+def api_documents_list():
+    """문서 목록 (필터·검색·정렬·페이지). draft_text/input_data 제외 (§3.2)."""
+    user_id = _require_login()
+    if not user_id:
+        return jsonify({"error": "UNAUTHORIZED", "message": "로그인이 필요합니다."}), 401
+    sb = _get_supabase()
+    if sb is None:
+        return jsonify({"error": "SUPABASE_UNAVAILABLE",
+                        "message": "문서 저장소에 연결할 수 없습니다."}), 503
+
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        per_page = min(100, max(1, int(request.args.get("per_page", 20))))
+    except (TypeError, ValueError):
+        per_page = 20
+
+    doc_type = request.args.get("doc_type")
+    status = request.args.get("status")
+    q = (request.args.get("q") or "").strip()
+    sort = request.args.get("sort", "updated_at:desc")
+
+    sort_field, _, sort_dir = sort.partition(":")
+    if sort_field not in ("created_at", "updated_at", "title"):
+        sort_field = "updated_at"
+    desc = (sort_dir or "desc").lower() != "asc"
+
+    try:
+        query = (
+            sb.table("documents")
+            .select(_DOC_LIST_COLUMNS, count="exact")
+            .eq("user_id", user_id)
+        )
+        # status 미지정 시 삭제건 제외, 지정 시 해당 상태만
+        if status and status in _VALID_DOC_STATUS:
+            query = query.eq("status", status)
+        else:
+            query = query.neq("status", "deleted")
+        if doc_type and doc_type in _VALID_DOC_TYPES:
+            query = query.eq("doc_type", doc_type)
+        if q:
+            query = query.ilike("title", f"%{q}%")
+
+        query = query.order(sort_field, desc=desc)
+        start = (page - 1) * per_page
+        query = query.range(start, start + per_page - 1)
+
+        res = query.execute()
+        total = res.count if res.count is not None else len(res.data or [])
+        return jsonify({
+            "items": res.data or [],
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+        })
+    except Exception as e:
+        return jsonify({"error": f"문서 목록 조회 실패: {e}"}), 500
+
+
+@app.route("/api/documents/stats", methods=["GET"])
+def api_documents_stats():
+    """통계 4종: 이번달 생성 / 저장완료 / 작성중 / 무료체험 잔여 (§3.3)."""
+    user_id = _require_login()
+    if not user_id:
+        return jsonify({"error": "UNAUTHORIZED", "message": "로그인이 필요합니다."}), 401
+    sb = _get_supabase()
+    if sb is None:
+        return jsonify({"error": "SUPABASE_UNAVAILABLE",
+                        "message": "문서 저장소에 연결할 수 없습니다."}), 503
+
+    def _count(builder):
+        res = builder.execute()
+        return res.count if res.count is not None else len(res.data or [])
+
+    try:
+        month_start = date.today().replace(day=1).isoformat()
+        this_month = _count(
+            sb.table("documents").select("id", count="exact")
+            .eq("user_id", user_id).neq("status", "deleted")
+            .gte("created_at", month_start)
+        )
+        saved = _count(
+            sb.table("documents").select("id", count="exact")
+            .eq("user_id", user_id).in_("status", ["saved", "delivered"])
+        )
+        in_progress = _count(
+            sb.table("documents").select("id", count="exact")
+            .eq("user_id", user_id).in_("status", ["draft", "generated", "in_review"])
+        )
+    except Exception as e:
+        return jsonify({"error": f"통계 조회 실패: {e}"}), 500
+
+    # 무료체험 잔여는 기존 결제 모듈 단일 출처 재활용 (§3.3, 내용증명 1건 한정)
+    trial = get_trial_status(user_id)
+    free_trial_remaining = 0 if trial.get("free_trial_used") else 1
+
+    return jsonify({
+        "this_month": this_month,
+        "saved": saved,
+        "in_progress": in_progress,
+        "free_trial_remaining": free_trial_remaining,
+    })
+
+
+@app.route("/api/documents", methods=["POST"])
+def api_documents_create():
+    """문서 신규 생성. body: { doc_type } (§3.4)."""
+    user_id = _require_login()
+    if not user_id:
+        return jsonify({"error": "UNAUTHORIZED", "message": "로그인이 필요합니다."}), 401
+    sb = _get_supabase()
+    if sb is None:
+        return jsonify({"error": "SUPABASE_UNAVAILABLE",
+                        "message": "문서 저장소에 연결할 수 없습니다."}), 503
+
+    data = request.get_json(silent=True) or {}
+    doc_type = data.get("doc_type")
+    if doc_type not in _VALID_DOC_TYPES:
+        return jsonify({"error": f"알 수 없는 문서 종류: {doc_type}"}), 400
+
+    try:
+        res = sb.table("documents").insert({
+            "user_id": user_id,
+            "doc_type": doc_type,
+            "status": "draft",
+            "current_step": 1,
+        }).execute()
+        row = (res.data or [{}])[0]
+        return jsonify({
+            "id": row.get("id"),
+            "doc_type": doc_type,
+            "status": "draft",
+            "current_step": 1,
+        }), 201
+    except Exception as e:
+        return jsonify({"error": f"문서 생성 실패: {e}"}), 500
+
+
+@app.route("/api/documents/<doc_id>", methods=["PATCH"])
+def api_documents_update(doc_id):
+    """문서 업데이트 (변경 필드만). user_id 소유권 검증 (§3.5)."""
+    user_id = _require_login()
+    if not user_id:
+        return jsonify({"error": "UNAUTHORIZED", "message": "로그인이 필요합니다."}), 401
+    sb = _get_supabase()
+    if sb is None:
+        return jsonify({"error": "SUPABASE_UNAVAILABLE",
+                        "message": "문서 저장소에 연결할 수 없습니다."}), 503
+
+    data = request.get_json(silent=True) or {}
+    patch = {k: v for k, v in data.items() if k in _PATCHABLE_FIELDS}
+    if not patch:
+        return jsonify({"error": "변경할 필드가 없습니다."}), 400
+    if "status" in patch and patch["status"] not in _VALID_DOC_STATUS:
+        return jsonify({"error": f"허용되지 않은 상태: {patch['status']}"}), 400
+
+    try:
+        res = (
+            sb.table("documents").update(patch)
+            .eq("id", doc_id).eq("user_id", user_id)
+            .execute()
+        )
+        if not res.data:
+            return jsonify({"error": "NOT_FOUND",
+                            "message": "문서를 찾을 수 없거나 권한이 없습니다."}), 404
+        return jsonify(res.data[0])
+    except Exception as e:
+        return jsonify({"error": f"문서 수정 실패: {e}"}), 500
+
+
+@app.route("/api/documents/<doc_id>", methods=["DELETE"])
+def api_documents_delete(doc_id):
+    """문서 soft-delete (status → 'deleted'). user_id 소유권 검증 (§3.1)."""
+    user_id = _require_login()
+    if not user_id:
+        return jsonify({"error": "UNAUTHORIZED", "message": "로그인이 필요합니다."}), 401
+    sb = _get_supabase()
+    if sb is None:
+        return jsonify({"error": "SUPABASE_UNAVAILABLE",
+                        "message": "문서 저장소에 연결할 수 없습니다."}), 503
+
+    try:
+        res = (
+            sb.table("documents").update({"status": "deleted"})
+            .eq("id", doc_id).eq("user_id", user_id)
+            .execute()
+        )
+        if not res.data:
+            return jsonify({"error": "NOT_FOUND",
+                            "message": "문서를 찾을 수 없거나 권한이 없습니다."}), 404
+        return jsonify({"success": True, "id": doc_id})
+    except Exception as e:
+        return jsonify({"error": f"문서 삭제 실패: {e}"}), 500
 
 
 if __name__ == "__main__":

@@ -1,32 +1,73 @@
 // dashboard_screen.js — 홈 대시보드 (로그인 상태, PRD v1.2 FR-16)
-// 공통 컴포넌트: window.YesNoToggle, window.MiniSteps, window.CaseProgressCard
-//               (dashboard/CaseProgressCard.js, ui/YesNoToggle.js 에서 로드)
+// 공통 컴포넌트: window.YesNoToggle, window.MiniSteps, window.CaseProgressCard,
+//               window.LoadingState, window.EmptyState
+//               (dashboard/CaseProgressCard.js, feedback/* 에서 로드)
+// 데이터: GET /api/documents (window.LawAPI.documents) — 설계 PRD §6
 
-// ── 목업 사건 데이터 ─────────────────────────────────────────
-const MOCK_CASES = [
-  {
-    id: 1,
-    title: "(주)미지급상사 물품대금 12,400,000원 독촉",
-    docType: "내용증명",
-    icon: "mail",
-    status: "발송완료",
-    step: 4,           // 4 = 모든 단계 완료
-    updatedAt: "2026-05-24",
-  },
-  {
-    id: 2,
-    title: "임대인 보증금 미반환 — 상대방 답변 분석",
-    docType: "상대방 반박문",
-    icon: "shield",
-    status: "분석중",
-    step: 3,           // 3 = 수정·저장 진행 중
-    updatedAt: "2026-05-30",
-  },
-];
+// ── DB doc_type(영문) → CaseProgressCard 표시용 메타 매핑 ─────
+// CaseProgressCard 내부 CASE_QUESTIONS/NEXT_DOCS 는 한글 docType 키를 쓰므로 변환.
+const DASHBOARD_DOC_META = {
+  notice:   { docType: "내용증명",     icon: "mail" },
+  brief:    { docType: "준비서면",     icon: "book" },
+  rebuttal: { docType: "상대방 반박문", icon: "shield" },
+};
+
+// DB status(영문) → 표시 라벨(한글, STATUS_BADGE_VARIANT 키와 정합)
+const DASHBOARD_STATUS_LABEL = {
+  draft:     "작성중",
+  generated: "초안생성됨",
+  in_review: "수정중",
+  saved:     "저장완료",
+  delivered: "발송완료",
+};
+
+// DB row → CaseProgressCard 가 기대하는 doc 형태로 변환
+function toCaseDoc(row) {
+  const meta = DASHBOARD_DOC_META[row.doc_type] || DASHBOARD_DOC_META.notice;
+  return {
+    id:         row.id,
+    docId:      row.id,
+    title:      row.title || "(제목 없음)",
+    docType:    meta.docType,
+    icon:       meta.icon,
+    status:     DASHBOARD_STATUS_LABEL[row.status] || "작성중",
+    dbStatus:   row.status,          // statusToStep() 계산용
+    updatedAt:  (row.updated_at || "").slice(0, 10),
+    inputData:  row.input_data || null,
+  };
+}
 
 
 // ── DashboardScreen ──────────────────────────────────────────
 window.DashboardScreen = function DashboardScreen() {
+  const [cases,   setCases]   = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    let alive = true;
+    window.LawAPI.documents
+      .list({ perPage: 50, sort: "updated_at:desc" })
+      .then((res) => {
+        if (!alive) return;
+        const docs = res.items || [];
+        // doc_type 별 최신 2건 groupBy (설계 PRD §6.1)
+        const grouped = {};
+        docs.forEach((doc) => {
+          if (!grouped[doc.doc_type]) grouped[doc.doc_type] = [];
+          if (grouped[doc.doc_type].length < 2) grouped[doc.doc_type].push(doc);
+        });
+        const flat = Object.values(grouped).flat().map(toCaseDoc);
+        setCases(flat);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setCases([]);
+        setLoading(false);
+      });
+    return () => { alive = false; };
+  }, []);
+
   return (
     <div className="screen">
       <TopNav active="home" />
@@ -185,11 +226,22 @@ window.DashboardScreen = function DashboardScreen() {
             전체 문서 보기 <Icon name="chevronR" size={12} />
           </button>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-          {MOCK_CASES.map(doc => (
-            <CaseProgressCard key={doc.id} doc={doc} />
-          ))}
-        </div>
+        {loading ? (
+          <LoadingState context="list" message="진행 중인 사건을 불러오는 중..." />
+        ) : cases.length === 0 ? (
+          <EmptyState
+            context="list"
+            message="아직 생성한 문서가 없습니다."
+            actionLabel="내편문서 만들기"
+            onAction={() => { window.location.hash = "/create/1"; }}
+          />
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            {cases.map(doc => (
+              <CaseProgressCard key={doc.id} doc={doc} />
+            ))}
+          </div>
+        )}
       </section>
 
       <LegalNotice />

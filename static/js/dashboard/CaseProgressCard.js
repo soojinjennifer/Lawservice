@@ -55,6 +55,25 @@ const FALLBACK_NEXT_DOCS = [
   { key: "소장",      icon: "document",label: "소장",      desc: "소송 제기" },
 ];
 
+// ── 추천 문서 라벨(한글) → CreateScreen docType(영문) 매핑 (설계 PRD §6.3) ─
+// 활성 3종(notice/brief/rebuttal)만 prefill 대상. 소장 등 미지원은 notice 폴백.
+const DOC_TYPE_MAP = {
+  "재내용증명":      "notice",
+  "내용증명":        "notice",
+  "상대방 반박문":   "rebuttal",
+  "반박문 이어쓰기": "rebuttal",
+  "보충 준비서면":   "brief",
+  "준비서면":        "brief",
+};
+
+// DB status(영문) → MiniSteps step (saved/delivered=4 → 1·2·3 모두 done)
+function statusToStep(status) {
+  if (status === "saved" || status === "delivered") return 4;
+  if (status === "in_review") return 3;
+  if (status === "generated") return 2;
+  return 1;
+}
+
 // ── 카드 헤더용 미니 스텝 인디케이터 ────────────────────────
 window.MiniSteps = function MiniSteps({ step }) {
   const steps = ["정보", "초안", "수정·저장"];
@@ -112,7 +131,41 @@ window.CaseProgressCard = function CaseProgressCard({ doc }) {
   const [answers,  setAnswers]  = React.useState([null, null, null]);
   const [selected, setSelected] = React.useState(defaultKey);
 
+  // 추천 로딩 상태 (설계 PRD §6.2): 답변 1개 이상 → 500ms 로딩 → 추천 활성화
+  const [recommendLoading, setRecommendLoading] = React.useState(false);
+  const [recommendReady,   setRecommendReady]   = React.useState(false);
+  const hasAnyAnswer = answers.some(a => a !== null);
+
+  React.useEffect(() => {
+    if (hasAnyAnswer && !recommendReady) {
+      setRecommendLoading(true);
+      const t = setTimeout(() => {
+        setRecommendLoading(false);
+        setRecommendReady(true);
+      }, 500);
+      return () => clearTimeout(t);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasAnyAnswer]);
+
+  // "선택한 문서 생성하기" → prefill 저장 후 CreateScreen 이동 (설계 PRD §6.3)
+  const handleCreate = () => {
+    if (!recommendReady) return;
+    const inputData = doc.inputData || doc.input_data || {};
+    const prefill = {
+      docType: DOC_TYPE_MAP[selected] || "notice",
+      sender:   inputData.sender   || "",
+      receiver: inputData.receiver || "",
+      prefillSource: "dashboard_recommendation",
+    };
+    try {
+      sessionStorage.setItem("law_form_prefill", JSON.stringify(prefill));
+    } catch (_) {}
+    window.location.hash = "/create/1";
+  };
+
   const badgeVariant = STATUS_BADGE_VARIANT[doc.status] || "neutral";
+  const miniStep = statusToStep(doc.dbStatus);
 
   return (
     <div className="card-flat" style={{ padding: 0, overflow: "hidden" }}>
@@ -141,7 +194,7 @@ window.CaseProgressCard = function CaseProgressCard({ doc }) {
 
         {/* 스텝 인디케이터 + 상태 배지 */}
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <MiniSteps step={doc.step} />
+          <MiniSteps step={miniStep} />
           <Badge variant={badgeVariant}>{doc.status}</Badge>
         </div>
       </div>
@@ -186,39 +239,59 @@ window.CaseProgressCard = function CaseProgressCard({ doc }) {
           }}>
             + 다음으로 추천하는 문서
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 14 }}>
-            {nextDocs.map(nd => {
-              const isSel = selected === nd.key;
-              return (
-                <button key={nd.key} type="button" onClick={() => setSelected(nd.key)} style={{
-                  border: `1.5px solid ${isSel ? "var(--brand-rest)" : "var(--color-neutral-stroke-2)"}`,
-                  borderRadius: 10, padding: "12px 10px",
-                  background: isSel ? "var(--brand-light)" : "#fff",
-                  textAlign: "left", cursor: "pointer",
-                }}>
-                  <span style={{
-                    width: 30, height: 30, borderRadius: 7, marginBottom: 8,
-                    background: isSel ? "var(--brand-rest)" : "var(--color-neutral-bg-alt)",
-                    display: "inline-flex", alignItems: "center", justifyContent: "center",
+          {!recommendReady ? (
+            // 답변 전 안내 / 로딩 (설계 PRD §6.2)
+            recommendLoading ? (
+              <LoadingState context="list" message="상황에 맞는 문서를 찾는 중..." inline />
+            ) : (
+              <div style={{
+                border: "1px dashed var(--color-neutral-stroke-2)", borderRadius: 10,
+                padding: "20px 16px", marginBottom: 14, textAlign: "center",
+                fontSize: 12, color: "var(--color-neutral-fg-3)", lineHeight: 1.6,
+              }}>
+                지금 상황을 알려주세요<br />답변 후 추천됩니다
+              </div>
+            )
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 14 }}>
+              {nextDocs.map(nd => {
+                const isSel = selected === nd.key;
+                return (
+                  <button key={nd.key} type="button" onClick={() => setSelected(nd.key)} style={{
+                    border: `1.5px solid ${isSel ? "var(--brand-rest)" : "var(--color-neutral-stroke-2)"}`,
+                    borderRadius: 10, padding: "12px 10px",
+                    background: isSel ? "var(--brand-light)" : "#fff",
+                    textAlign: "left", cursor: "pointer",
                   }}>
-                    <Icon name={nd.icon} size={14} color={isSel ? "#fff" : "var(--brand-rest)"} />
-                  </span>
-                  <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 3, flexWrap: "wrap" }}>
-                    <span style={{ fontWeight: 700, fontSize: 12, color: "var(--color-neutral-fg-1)" }}>
-                      {nd.label}
+                    <span style={{
+                      width: 30, height: 30, borderRadius: 7, marginBottom: 8,
+                      background: isSel ? "var(--brand-rest)" : "var(--color-neutral-bg-alt)",
+                      display: "inline-flex", alignItems: "center", justifyContent: "center",
+                    }}>
+                      <Icon name={nd.icon} size={14} color={isSel ? "#fff" : "var(--brand-rest)"} />
                     </span>
-                    {nd.recommended && (
-                      <Badge variant="info" style={{ fontSize: 9, padding: "1px 5px", lineHeight: 1.4 }}>추천</Badge>
-                    )}
-                  </div>
-                  <div style={{ fontSize: 11, color: "var(--color-neutral-fg-3)", lineHeight: 1.4 }}>
-                    {nd.desc}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-          <button className="btn btn-primary" style={{ width: "100%" }} data-nav="/create/1">
+                    <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 3, flexWrap: "wrap" }}>
+                      <span style={{ fontWeight: 700, fontSize: 12, color: "var(--color-neutral-fg-1)" }}>
+                        {nd.label}
+                      </span>
+                      {nd.recommended && (
+                        <Badge variant="info" style={{ fontSize: 9, padding: "1px 5px", lineHeight: 1.4 }}>추천</Badge>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--color-neutral-fg-3)", lineHeight: 1.4 }}>
+                      {nd.desc}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <button
+            className="btn btn-primary"
+            style={{ width: "100%" }}
+            onClick={handleCreate}
+            disabled={!recommendReady}
+          >
             선택한 문서 생성하기 <Icon name="arrowR" size={14} color="#fff" />
           </button>
         </div>
