@@ -484,10 +484,6 @@ input, textarea, select { font: inherit; }
 .btn-subtle { background: transparent; color: var(--color-neutral-fg-1); }
 .btn-subtle:hover { background: var(--color-neutral-bg-subtle); }
 
-/* danger variant (Button.js variant=danger 매핑, 기존 CSS 누락분 보강) */
-.btn-danger { background: var(--color-status-danger-fg); color: #fff; }
-.btn-danger:hover { filter: brightness(0.93); }
-
 .btn-brand-subtle { background: var(--brand-light); color: var(--brand-rest); }
 .btn-brand-subtle:hover { background: var(--brand-light-2); }
 
@@ -1159,36 +1155,6 @@ input, textarea, select { font: inherit; }
   padding: 0 28px 24px;
 }
 
-/* ── Strategy Modal (FR-24 내편 전략 제안) ── */
-.strategy-modal-body { padding: 0 4px; }
-.strategy-modal-subtitle { font-size: 13px; color: var(--color-neutral-fg-2); margin-bottom: 20px; }
-.strategy-radio-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
-.radio-card {
-  display: flex; align-items: flex-start; gap: 12px;
-  padding: 14px 16px; border-radius: 10px;
-  border: 1.5px solid var(--color-neutral-stroke-1);
-  cursor: pointer; transition: border-color 0.15s, background 0.15s;
-  background: #fff;
-}
-.radio-card:hover { border-color: var(--brand-rest); background: rgba(45,77,170,0.03); }
-.radio-card.selected { border-color: var(--brand-rest); background: rgba(45,77,170,0.06); }
-.radio-card input[type=radio] { margin-top: 2px; accent-color: var(--brand-rest); flex-shrink: 0; }
-.radio-card-text { display: flex; flex-direction: column; gap: 3px; }
-.radio-card-title { font-size: 14px; font-weight: 600; color: var(--color-neutral-fg-1); }
-.radio-card-desc { font-size: 13px; color: var(--color-neutral-fg-2); line-height: 1.5; }
-.strategy-custom-btn { margin-bottom: 8px; }
-.strategy-custom-input { width: 100%; margin-bottom: 4px; }
-.strategy-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
-
-/* ── Draft Highlight (FR-24 수정 줄 강조) ── */
-.draft-highlight {
-  background-color: #FFF9C4;
-  border-radius: 2px;
-  padding: 0 2px;
-  transition: background-color 2s ease-out;
-}
-.draft-highlight.fade-out { background-color: transparent; }
-
 /* ── EmpathyBubble — 홈 공감 섹션 말풍선 ───────────────────── */
 .empathy-section {
   background: linear-gradient(135deg, #1a2d6b 0%, #0d1b42 100%);
@@ -1333,34 +1299,6 @@ input, textarea, select { font: inherit; }
   color: var(--color-status-success-fg);
 }
 
-/* ── 결제 실패 step (PaymentModal step:fail, FR-27) ──────────── */
-.payment-fail-step { text-align: center; padding: 8px 0; }
-.payment-fail-icon {
-  width: 60px; height: 60px; border-radius: 999px; margin: 0 auto 16px;
-  background: var(--color-status-danger-bg);
-  display: flex; align-items: center; justify-content: center;
-}
-.payment-fail-title { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
-.payment-fail-message {
-  font-size: 14px; line-height: 1.6; color: var(--color-neutral-fg-2);
-}
-
-/* ── 테스트 모드 배너 (PaymentModal) ───────────────────────── */
-.payment-test-banner {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 12px;
-  background: var(--color-status-warning-bg);
-  border: 1px solid var(--color-status-warning-border, var(--color-status-warning-fg));
-  border-radius: var(--radius-md);
-  font-size: 12px; font-weight: 600;
-  color: var(--color-status-warning-fg);
-}
-
-/* ── 결제 내역 행 (PaymentHistoryItem, FR-29) ──────────────── */
-.payment-history-item td { vertical-align: middle; }
-.payment-history-item .btn-sm + .btn-sm,
-.payment-history-item .btn-sm + a.btn-sm { margin-left: 8px; }
-
 /* ── YesNoToggle ────────────────────────────────────────────── */
 .yes-no-toggle {
   display: inline-flex; border: 1px solid var(--color-neutral-stroke-1);
@@ -1413,72 +1351,100 @@ input, textarea, select { font: inherit; }
   overflow: hidden;
 }
 
-/* ── Create Step 2·3 — Figma 56:8418 레이아웃 (문서 | 채팅 2단 + 전폭 하단) ── */
-/* 상단: 좌측 문서 본문 + 우측 AI 채팅 패널(같은 높이) */
-.create-edit-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 380px;
-  gap: 24px;
-  align-items: stretch;
-}
-.create-edit-layout .create-doc-col { min-width: 0; }
-.create-edit-layout .create-doc-col .doc-preview {
-  height: 100%;
-  max-height: calc(100vh - 320px);
-  overflow-y: auto;
-}
-/* 2단 안의 채팅 패널: 좌측 문서와 동일 높이로 늘어나고 내부만 스크롤 */
-.create-edit-layout .create-chat-col {
-  display: flex;
-  min-width: 0;
-}
-.create-edit-layout .create-chat-col .chat-panel {
-  flex: 1;
-  height: auto;
-  max-height: calc(100vh - 320px);
+/* ── CreateScreen — 증거 자료 하단 공통 Container ───────────── */
+.evidence-bottom-container {
+  margin-top: 16px;
+  background: #fff;
   border: 1px solid var(--color-neutral-stroke-2);
-  border-radius: 12px;
-  overflow: hidden;
+  border-radius: var(--radius-xl, 16px);
+  padding: 24px 32px;
+}
+.evidence-bottom-container h3 {
+  font-size: 14px; font-weight: 700; margin: 0 0 16px;
+  display: flex; align-items: center; gap: 8px;
 }
 
-/* 비활성 채팅(Step 2): 보이되 상호작용 차단 + 안내 오버레이 */
-.create-chat-col.is-disabled { position: relative; }
-.create-chat-col.is-disabled .chat-panel { pointer-events: none; }
-.create-chat-col.is-disabled .chat-disabled-overlay {
-  position: absolute; inset: 0;
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 8px;
-  background: rgba(255, 255, 255, 0.72);
-  border-radius: 12px;
-  text-align: center; padding: 24px;
-  color: var(--color-neutral-fg-2);
-}
-.chat-disabled-overlay .chat-disabled-title {
-  font-size: 14px; font-weight: 700; color: var(--color-neutral-fg-1);
-}
-.chat-disabled-overlay .chat-disabled-desc {
-  font-size: 12px; color: var(--color-neutral-fg-3); line-height: 1.5;
-}
-
-/* 전폭 하단 버튼 행 (문서+채팅 2단 아래) */
-.create-bottom-actions {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-top: 24px; padding-top: 20px;
+/* ── CreateScreen — 스텝별 sticky 하단 액션 바 ─────────────── */
+.create-bottom-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   border-top: 1px solid var(--color-neutral-stroke-2);
-}
-.create-bottom-actions .create-bottom-actions-right {
-  display: flex; gap: 8px;
-}
-
-/* 전폭 증거 자료 행 (카드 가로 배치) */
-.create-evidence-row { margin-top: 28px; }
-.create-evidence-row .evidence-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 16px;
+  min-height: 90px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 40px;
+  margin: 0 -40px;
 }
 
-@media (max-width: 960px) {
-  .create-edit-layout { grid-template-columns: 1fr; }
-  .create-edit-layout .create-chat-col .chat-panel { height: 480px; }
+/* ── AIAssistPanel — 하단 slide-up drawer ──────────────────── */
+.ai-assist-drawer {
+  position: fixed;
+  bottom: 0; right: 0;
+  width: 400px; height: 75vh;
+  background: #fff;
+  border-radius: 16px 16px 0 0;
+  border: 1px solid var(--color-neutral-stroke-2);
+  border-bottom: none;
+  box-shadow: -4px -4px 24px rgba(0, 0, 0, 0.12);
+  z-index: 300;
+  display: flex; flex-direction: column;
+  transform: translateY(100%);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.ai-assist-drawer.is-open { transform: translateY(0); }
+.ai-assist-scrim {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.08);
+  z-index: 299;
+}
+/* ── AI 어시스턴트 FAB 버튼 ─────────────────────────────────── */
+.create-fab {
+  position: fixed;
+  bottom: 110px; right: 24px;
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  background: var(--brand-rest, #2D4DAA);
+  color: #fff; border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 16px rgba(45, 77, 170, 0.35);
+  z-index: 250;
+  transition: transform .15s, box-shadow .15s;
+}
+.create-fab:hover { transform: translateY(-2px); box-shadow: 0 6px 24px rgba(45, 77, 170, 0.45); }
+.create-fab.is-active { background: var(--brand-darker, #1e3583); }
+/* ── 증거 파일 카드 그리드 (Step2·3) ──────────────────────── */
+.evidence-card-grid { display: flex; flex-wrap: wrap; gap: 12px; }
+.evidence-file-card {
+  position: relative;
+  background: #fff;
+  border: 1px solid var(--color-neutral-stroke-1);
+  border-radius: var(--radius-xl);
+  padding: 14px;
+  min-width: 160px; max-width: 220px;
+  display: flex; flex-direction: column; gap: 8px;
+  flex: 0 0 auto;
+}
+.evidence-file-card-close {
+  position: absolute; top: 8px; right: 8px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--color-neutral-bg-subtle);
+  border: 1px solid var(--color-neutral-stroke-1);
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: background .12s;
+}
+.evidence-file-card-close:hover { background: var(--color-status-danger-bg); }
+.evidence-file-name {
+  font-size: 12px; font-weight: 600;
+  word-break: break-all; line-height: 1.4;
+  color: var(--color-neutral-fg-1);
+}
+@media (max-width: 768px) {
+  .ai-assist-drawer { width: 100vw; }
+  .create-bottom-bar { padding: 0 20px; }
+  .create-fab { bottom: 90px; right: 16px; }
 }
