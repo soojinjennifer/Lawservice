@@ -477,7 +477,7 @@ def api_generate():
         client = anthropic.Anthropic(api_key=api_key)
         resp = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=3500,
+            max_tokens=8000,
             messages=[{"role": "user", "content": prompt}],
         )
         draft = resp.content[0].text.strip()
@@ -536,7 +536,7 @@ def api_revise():
         client = anthropic.Anthropic(api_key=api_key)
         resp = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=3500,
+            max_tokens=8000,
             messages=[{"role": "user", "content": prompt}],
         )
         return jsonify({"draft": resp.content[0].text.strip()})

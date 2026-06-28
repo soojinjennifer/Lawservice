@@ -92,7 +92,8 @@ window.AppModalRoot = function AppModalRoot() {
 // ── PaymentFlowModal (FR-21) ──────────────────────────────────
 // 단계형 결제 플로우: 확인 → 결제수단 선택 → 성공
 // 사용: window.openPaymentFlow({ docType, price, priceLabel, onSuccess })
-window.openPaymentFlow = function openPaymentFlow({ docType, price, priceLabel, onSuccess }) {
+window.openPaymentFlow = function openPaymentFlow({ docType, price, priceLabel, onSuccess, context }) {
+  context = context || 'purchase'; // 'purchase' | 'revision'
   function PaymentFlow({ closeModal }) {
     const [step, setStep] = React.useState("confirm"); // confirm | pay | success | fail
     const [method, setMethod] = React.useState("card");
@@ -102,6 +103,21 @@ window.openPaymentFlow = function openPaymentFlow({ docType, price, priceLabel, 
     const isTestMode = !!(window.PAYMENT_CONFIG && window.PAYMENT_CONFIG.testMode);
 
     const handlePay = async () => {
+      // 결제 전 로그인 확인 (getUserId는 동기 캐시; 없으면 async 세션 재확인)
+      let userId = window.AuthStore && window.AuthStore.getUserId && window.AuthStore.getUserId();
+      if (!userId) {
+        try {
+          const sr = await (window.AuthStore && window.AuthStore.getSession
+            ? window.AuthStore.getSession() : Promise.resolve({}));
+          const s = sr && sr.data && sr.data.session;
+          userId = s && s.user && s.user.id;
+        } catch (_) {}
+      }
+      if (!userId) {
+        setFailType("UNAUTHORIZED");
+        setStep("fail");
+        return;
+      }
       setLoading(true);
       const forced = window.PAYMENT_CONFIG && window.PAYMENT_CONFIG._mockForceFail;
       try {
@@ -119,6 +135,7 @@ window.openPaymentFlow = function openPaymentFlow({ docType, price, priceLabel, 
         });
 
         setLoading(false);
+        // 서버 confirm 성공 계약: { success: true, ... } (payment_routes.py confirm)
         if (res && res.success) {
           setStep("success");
         } else {
@@ -127,10 +144,20 @@ window.openPaymentFlow = function openPaymentFlow({ docType, price, priceLabel, 
         }
       } catch (e) {
         setLoading(false);
-        // 서버가 failType을 내려주면 그대로, 없으면 코드/상태로 추정 (FR-27)
+        // 멱등성(NFR-PAY-03): 동일 orderId 가 이미 DONE 이면 409 ALREADY_CONFIRMED.
+        // 이는 결제가 이미 성공한 상태이므로 실패가 아니라 성공으로 처리한다.
+        // (onSuccess 재호출 등으로 confirm 이 중복 진입한 케이스)
+        if (e.status === 409 || e.code === "ALREADY_CONFIRMED") {
+          console.log("[payment] confirm 중복(409) — 이미 결제 완료 상태로 간주, success 처리");
+          setStep("success");
+          return;
+        }
+        // 서버가 failType을 내려주면 그대로 사용하고, 없으면 에러 코드 기반으로 매핑한다 (FR-27).
+        // status code 단독 추정(401→USER_CANCEL)은 오판 소지가 있어 보조 수단으로만 사용.
         const ft = (e.body && e.body.failType)
           || (e.code === "AMOUNT_MISMATCH" ? "AMOUNT_MISMATCH" : null)
-          || (e.status === 401 ? "USER_CANCEL" : "NETWORK_ERROR");
+          || (e.code === "MOCK_FORCED_FAIL" ? "NETWORK_ERROR" : null)
+          || (e.status === 401 ? "UNAUTHORIZED" : "NETWORK_ERROR");
         setFailType(ft);
         setStep("fail");
       }
@@ -139,6 +166,7 @@ window.openPaymentFlow = function openPaymentFlow({ docType, price, priceLabel, 
     // FR-27 실패 유형별 안내 문구
     const FAIL_MESSAGES = {
       USER_CANCEL:     "결제가 취소되었습니다.",
+      UNAUTHORIZED:    "로그인이 필요합니다. 로그인 후 다시 시도해주세요.",
       LIMIT_EXCEEDED:  "결제 한도가 초과되었습니다. 다른 카드를 사용해주세요.",
       CARD_ERROR:      "카드 정보를 확인해주세요.",
       NETWORK_ERROR:   "일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
@@ -146,8 +174,9 @@ window.openPaymentFlow = function openPaymentFlow({ docType, price, priceLabel, 
     };
 
     if (step === "fail") {
-      // 금액 불일치(서버 검증 실패)는 재시도 불가 — [닫기]만 제공
-      const canRetry = failType !== "AMOUNT_MISMATCH";
+      // 미로그인: 로그인 유도 / 금액불일치: 닫기만 / 그 외: 재시도
+      const isUnauth = failType === "UNAUTHORIZED";
+      const canRetry = !isUnauth && failType !== "AMOUNT_MISMATCH";
       return (
         <div className="payment-fail-step">
           <div className="payment-fail-icon">
@@ -158,6 +187,15 @@ window.openPaymentFlow = function openPaymentFlow({ docType, price, priceLabel, 
             {FAIL_MESSAGES[failType] || FAIL_MESSAGES.NETWORK_ERROR}
           </div>
           <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
+            {isUnauth && (
+              <button
+                className="btn btn-primary btn-lg"
+                style={{ flex: 2 }}
+                onClick={() => { closeModal(); window.location.hash = "/login"; }}
+              >
+                <Icon name="arrowR" size={15} color="#fff" /> 로그인하러 가기
+              </button>
+            )}
             {canRetry && (
               <button
                 className="btn btn-primary btn-lg"
@@ -180,6 +218,7 @@ window.openPaymentFlow = function openPaymentFlow({ docType, price, priceLabel, 
     }
 
     if (step === "success") {
+      const isRevision = context === 'revision';
       return (
         <div style={{ textAlign: "center", padding: "8px 0" }}>
           <div style={{
@@ -189,17 +228,23 @@ window.openPaymentFlow = function openPaymentFlow({ docType, price, priceLabel, 
           }}>
             <Icon name="checkOnly" size={28} color="var(--color-status-success-fg)" />
           </div>
-          <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>결제가 완료되었습니다!</div>
+          <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>결제가 처리되었습니다.</div>
           <div className="muted" style={{ fontSize: 14, marginBottom: 24, lineHeight: 1.6 }}>
-            <b style={{ color: "var(--brand-rest)" }}>{docType}</b> 1건이 구매되었습니다.<br />
-            지금 바로 문서 작성을 시작하세요.
+            {isRevision
+              ? "이제 문서 수정이 가능합니다."
+              : <><b style={{ color: "var(--brand-rest)" }}>{docType}</b> 1건이 구매되었습니다.<br />지금 바로 문서 작성을 시작하세요.</>
+            }
           </div>
           <button
             className="btn btn-primary btn-lg"
             style={{ width: "100%" }}
-            onClick={() => { closeModal(); if (onSuccess) onSuccess(); window.location.hash = "/create/1"; }}
+            onClick={() => {
+              closeModal();
+              if (onSuccess) onSuccess();
+              if (!isRevision) window.location.hash = "/create/1";
+            }}
           >
-            <Icon name="arrowR" size={15} color="#fff" /> 문서 만들기 시작
+            <Icon name="arrowR" size={15} color="#fff" /> {isRevision ? "확인" : "문서 만들기 시작"}
           </button>
         </div>
       );

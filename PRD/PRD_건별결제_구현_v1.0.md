@@ -303,9 +303,10 @@ def check_document_access(user_id: str, doc_type: str) -> AccessResult:
 
 **수정 횟수 제한**
 
-- `document_access.revision_count_used` 값이 `revision_count_limit`(기본값: 3)에 도달하면 `/api/revise` 접근 차단
-- 차단 시 응답: `{ "error": "REVISION_LIMIT_EXCEEDED", "used": 3, "limit": 3 }`
-- 클라이언트: "대화형 수정 횟수(3회)를 모두 사용하셨습니다" Toast 표시
+- **유료 결제(`access_type=paid`)**: 수정 횟수 **무제한**. `/api/revise` 횟수 게이트 미적용.
+- **무료 체험(`access_type=free_trial`)**: `revision_count_limit`(기본값: 3)에 도달하면 `/api/revise` 접근 차단
+  - 차단 시 응답: `{ "error": "REVISION_LIMIT_EXCEEDED", "used": 3, "limit": 3 }`
+  - 클라이언트: "대화형 수정 횟수(3회)를 모두 사용하셨습니다" Toast 표시
 
 **무료 체험 워터마크 처리**
 
@@ -889,7 +890,7 @@ if (response.status === 403) {
 |---|---|---|
 | T-01 | 로그인 사용자가 준비서면 49,000원 결제 성공 | `payments.status=DONE`, `document_access` 생성, 문서 생성 1단계 이동 |
 | T-02 | 내용증명 무료 체험 사용 (가입 후 첫 문서) | `document_access(access_type=free_trial)` 생성, 워터마크 있는 .docx 다운로드 |
-| T-03 | 결제 성공 후 `/api/revise` 3회 사용 | 3회 후 `revision_count_used=3`, 4번째 호출에 403 반환 |
+| T-03 | 결제 성공 후 `/api/revise` 반복 사용 | 횟수 제한 없이 계속 수정 가능. `revision_count_used` 증가, 403 미반환 |
 | T-04 | 결제 후 7일 이내 미사용 건 환불 신청 | `payments.status=CANCELLED`, `document_access.revoked_at` 기록 |
 | T-05 | Webhook 정상 수신 | `payments.status` 업데이트, `webhook_received_at` 기록 |
 

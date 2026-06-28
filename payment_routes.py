@@ -95,16 +95,23 @@ def check_document_access(user_id, doc_type_en):
 
     반환: {"allowed": bool, "access_type": str|None, "access_id": str|None, "reason": str|None}
     """
-    # 1) 무료 체험 (내용증명 한정, 미사용 시)
+    # 1) 유효한 유료 권한 우선 (BUGFIX: 결제 직후 free_trial 보다 paid 를 먼저 인식).
+    #    결제로 paid access 가 생성됐는데도 free_trial 로 판정되어 결제 모달이
+    #    반복되던 문제를 방지한다. paid access 는 수정 무제한이므로 항상 우선한다.
+    acc = _active_access(user_id, doc_type_en)
+    if acc and acc.get("access_type") == "paid":
+        return {"allowed": True, "access_type": "paid", "access_id": acc["id"], "reason": None}
+
+    # 2) 무료 체험 (내용증명 한정, 미사용 시)
     if doc_type_en == FREE_TRIAL_DOC and not _free_trial_used(user_id, doc_type_en):
         return {"allowed": True, "access_type": "free_trial", "access_id": None, "reason": None}
 
-    # 2) 유효한 유료 권한
-    acc = _active_access(user_id, doc_type_en)
+    # 3) 그 밖의 유효 권한(무료체험 row 등)
     if acc:
-        return {"allowed": True, "access_type": "paid", "access_id": acc["id"], "reason": None}
+        return {"allowed": True, "access_type": acc.get("access_type", "paid"),
+                "access_id": acc["id"], "reason": None}
 
-    # 3) 불가
+    # 4) 불가
     return {"allowed": False, "access_type": None, "access_id": None, "reason": "PAYMENT_REQUIRED"}
 
 
@@ -136,16 +143,37 @@ def record_generate_use(user_id, doc_type_en):
 
 
 def check_and_increment_revision(user_id, doc_type_en):
-    """FR-30 수정 횟수 게이트. active access 없으면 허용(Phase 1 정책). 성공 시 카운트 증가."""
-    acc = _active_access(user_id, doc_type_en)
-    if acc is None:
-        return {"allowed": True, "used": 0, "limit": DEFAULT_REVISION_LIMIT}
-    used = acc["revision_count_used"]
-    limit = acc["revision_count_limit"]
-    if used >= limit:
-        return {"allowed": False, "used": used, "limit": limit}
-    acc["revision_count_used"] += 1
-    return {"allowed": True, "used": used + 1, "limit": limit}
+    """FR-30 수정 횟수 게이트.
+    paid: 무제한 (sort 순서에 의존하지 않고 명시적으로 paid 먼저 탐색, FR-30 유료 우선).
+    free_trial: DEFAULT_REVISION_LIMIT 적용."""
+    paid_acc = None
+    free_acc = None
+    for acc in _DOC_ACCESS.values():
+        if (acc["user_id"] == user_id and acc["doc_type"] == doc_type_en
+                and acc["revoked_at"] is None):
+            if acc.get("access_type") == "paid" and paid_acc is None:
+                paid_acc = acc
+            elif acc.get("access_type") == "free_trial" and free_acc is None:
+                free_acc = acc
+        if paid_acc and free_acc:
+            break
+
+    # 1) 유료 결제 우선: 수정 횟수 무제한
+    if paid_acc:
+        paid_acc["revision_count_used"] = paid_acc.get("revision_count_used", 0) + 1
+        return {"allowed": True, "used": paid_acc["revision_count_used"], "limit": None}
+
+    # 2) 무료 체험: 한도 확인
+    if free_acc:
+        used = free_acc["revision_count_used"]
+        limit = free_acc["revision_count_limit"]
+        if used >= limit:
+            return {"allowed": False, "used": used, "limit": limit}
+        free_acc["revision_count_used"] += 1
+        return {"allowed": True, "used": used + 1, "limit": limit}
+
+    # 3) 접근 권한 없음 → 허용 (무료 체험 generate 전 revise 엣지케이스)
+    return {"allowed": True, "used": 0, "limit": None}
 
 
 def get_trial_status(user_id):
@@ -423,11 +451,35 @@ def access_check():
     is_free_eligible = (doc_type_en == FREE_TRIAL_DOC
                         and not _free_trial_used(user_id, doc_type_en))
     acc = _active_access(user_id, doc_type_en)
-    revisions_remaining = (acc["revision_count_limit"] - acc["revision_count_used"]) if acc else DEFAULT_REVISION_LIMIT
+    if acc and acc.get("access_type") == "paid":
+        revisions_remaining = None  # 유료 결제: 무제한
+    elif acc:
+        revisions_remaining = acc["revision_count_limit"] - acc["revision_count_used"]
+    else:
+        revisions_remaining = DEFAULT_REVISION_LIMIT
 
     return jsonify({
         "hasAccess": res["allowed"],
         "accessType": res["access_type"],
         "isFreeTrialEligible": is_free_eligible,
         "revisionsRemaining": revisions_remaining,
+    })
+
+
+# ── DEV ONLY: POST /api/dev/reset ────────────────────────────────
+@payment_bp.route("/api/dev/reset", methods=["POST"])
+def dev_reset():
+    """개발/테스트용 — 인메모리 결제·권한·수정횟수 데이터 전체 초기화.
+    프로덕션 환경(FLASK_ENV=production)에서는 비활성화."""
+    import os
+    if os.getenv("FLASK_ENV") == "production":
+        return jsonify({"error": "FORBIDDEN"}), 403
+
+    _PAYMENTS.clear()
+    _DOC_ACCESS.clear()
+    _ORDERS.clear()
+    return jsonify({
+        "ok": True,
+        "message": "인메모리 결제/권한/수정횟수 데이터가 초기화됐습니다.",
+        "cleared": ["_PAYMENTS", "_DOC_ACCESS", "_ORDERS"],
     })

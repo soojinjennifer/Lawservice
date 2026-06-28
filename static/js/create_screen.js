@@ -631,75 +631,116 @@ function StepEdit({ docType, draftText, setDraftText, onBack, onDownload, onRege
   };
   React.useEffect(scrollToBottom, [messages]);
 
-  const openPaymentForRevision = () => {
+  // 실제 문서 수정 실행 (게이트 통과 후 공통 경로). isPaid=true 이면 무료 횟수 차감/안내 생략.
+  // BUGFIX(버그2): 결제 onSuccess 에서 이 함수를 직접 호출해 모달을 다시 열지 않고 바로 수정을 수행한다.
+  const applyRevision = async (userMsg, isPaid) => {
+    setInput("");
+    setMessages(m => [...m, { role: "user", text: userMsg }]);
+    setLoading(true);
+    try {
+      const revised = await window.LawAPI.revise({ draft: currentDraft, revisionRequest: userMsg, docType });
+      setHighlightedDraft(buildHighlightedDraft(currentDraft, revised));
+      setCurrentDraft(revised);
+      setDraftText(revised);
+
+      if (isPaid) {
+        setMessages(m => [...m, {
+          role: "ai",
+          text: "수정이 완료되었습니다. 왼쪽 미리보기에서 확인해 주세요.",
+        }]);
+      } else {
+        const { data: c } = await AuthStore.getCredits().catch(() => ({ data: null }));
+        const remaining = c ? c.trial_revision_remaining - 1 : 0;
+        AuthStore.deductTrialRevision().catch(() => {});
+        if (remaining <= 0) {
+          setMessages(m => [...m, {
+            role: "ai",
+            text: "수정이 완료되었습니다. 왼쪽 미리보기에서 확인해 주세요.\n\n무료 수정 횟수(3회)를 모두 사용했습니다. 추가 수정은 문서를 구매해 주세요.",
+          }]);
+        } else {
+          setMessages(m => [...m, {
+            role: "ai",
+            text: `수정이 완료되었습니다. 왼쪽 미리보기에서 확인해 주세요.\n(남은 무료 수정: ${remaining}회)`,
+          }]);
+        }
+      }
+    } catch (e) {
+      setMessages(m => [...m, { role: "ai", text: `오류가 발생했습니다: ${e.message}` }]);
+    }
+    setLoading(false);
+  };
+
+  // 결제 모달을 열고, 결제 성공 시 accessCheck 를 재조회해 paid 를 확인한 뒤
+  // 모달 없이 곧바로 수정을 재실행한다 (버그2: 결제 후 모달 반복 방지).
+  const openPaymentForRevision = (pendingText) => {
     const DOC_PRICES = { notice: 9900, brief: 49000, rebuttal: 69000 };
     const price = DOC_PRICES[docType] || 9900;
     window.openPaymentFlow({
       docType: meta.name,
       price: price,
       priceLabel: price.toLocaleString() + "원",
-      onSuccess: () => {},
+      context: 'revision',
+      onSuccess: async () => {
+        if (!pendingText || !pendingText.trim()) return;
+        // 새로 발급된 paid access 를 서버에서 재확인 (캐시된 상태 사용 금지).
+        let isPaid = false;
+        try {
+          const access = await window.LawAPI.payment.accessCheck(docType);
+          isPaid = access && access.accessType === "paid";
+          console.log("[payment] 결제 후 accessCheck:", access && access.accessType);
+        } catch (_) {}
+        // 결제 직후이므로 게이트(openPaymentForRevision)를 다시 거치지 않고 직접 수정 실행.
+        await applyRevision(pendingText.trim(), isPaid || true);
+      },
     });
   };
 
   const sendRevision = async (text) => {
     if (!text.trim() || loading || riskChecking) return;
 
-    // 크레딧 조회 실패 시 보수적으로 차단
-    let credits = null;
+    // 결제(구매)로 유료 권한을 보유한 경우 무료 수정 횟수 게이트를 건너뛴다 (FR-30).
+    // accessType === "paid" 이면 결제 완료 상태이므로 trial 크레딧 소진과 무관하게 수정 허용.
+    let hasPaidAccess = false;
     try {
-      const res = await AuthStore.getCredits();
-      credits = res.data;
+      const access = await window.LawAPI.payment.accessCheck(docType);
+      hasPaidAccess = access && access.accessType === "paid";
     } catch (_) {
-      setMessages(m => [...m, { role: "ai", text: "크레딧 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요." }]);
+      // 권한 조회 실패 시 paid 로 단정하지 않고 아래 trial 게이트로 진행
+    }
+
+    // 유료 권한 보유: 게이트 없이 바로 수정 (공통 경로 재사용)
+    if (hasPaidAccess) {
+      await applyRevision(text.trim(), true);
       return;
     }
 
-    // 수정 횟수 소진 확인
-    if (!credits || credits.trial_revision_remaining <= 0) {
-      setMessages(m => [...m, {
-        role: "ai",
-        text: "무료 수정 횟수(3회)를 모두 사용했습니다.\n계속 수정하려면 해당 문서를 구매해 주세요.",
-      }]);
-      openPaymentForRevision();
-      return;
-    }
-
-    const userMsg = text.trim();
-    setInput("");
-    setMessages(m => [...m, { role: "user", text: userMsg }]);
-    setLoading(true);
-    try {
-      const revised = await window.LawAPI.revise({ draft: currentDraft, revisionRequest: userMsg });
-      // 수정 전/후를 비교해 변경된 줄을 노란색으로 강조 (FR-24, XSS escape 처리됨)
-      setHighlightedDraft(buildHighlightedDraft(currentDraft, revised));
-      setCurrentDraft(revised);
-      setDraftText(revised);
-
-      // 차감 후 잔여 횟수 계산 (낙관적 업데이트)
-      const remaining = credits.trial_revision_remaining - 1;
+    // 무료 체험 크레딧 (유료 권한이 없을 때만 조회/차감에 사용)
+    let credits = null;
+    if (!hasPaidAccess) {
+      // 크레딧 조회 실패 시 보수적으로 차단
       try {
-        await AuthStore.deductTrialRevision();
+        const res = await AuthStore.getCredits();
+        credits = res.data;
       } catch (_) {
-        // 서버 차감 실패해도 UI는 진행 (다음 요청에서 서버 값으로 재확인)
+        setMessages(m => [...m, { role: "ai", text: "크레딧 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요." }]);
+        return;
       }
 
-      if (remaining <= 0) {
+      // 수정 횟수 소진 확인 (유료 권한이 없을 때만)
+      if (!credits || credits.trial_revision_remaining <= 0) {
         setMessages(m => [...m, {
           role: "ai",
-          text: "수정이 완료되었습니다. 왼쪽 미리보기에서 확인해 주세요.\n\n무료 수정 횟수(3회)를 모두 사용했습니다. 추가 수정은 문서를 구매해 주세요.",
+          text: "무료 수정 횟수(3회)를 모두 사용했습니다.\n계속 수정하려면 해당 문서를 구매해 주세요.",
         }]);
-        openPaymentForRevision();
-      } else {
-        setMessages(m => [...m, {
-          role: "ai",
-          text: `수정이 완료되었습니다. 왼쪽 미리보기에서 확인해 주세요.\n(남은 무료 수정: ${remaining}회)`,
-        }]);
+        // BUGFIX(버그2): 현재 수정 요청 텍스트를 결제 플로우로 넘겨, 결제 성공 시
+        // onSuccess 에서 accessCheck 재조회 후 모달 없이 곧바로 이 수정을 실행한다.
+        openPaymentForRevision(text.trim());
+        return;
       }
-    } catch (e) {
-      setMessages(m => [...m, { role: "ai", text: `오류가 발생했습니다: ${e.message}` }]);
     }
-    setLoading(false);
+
+    // 무료 크레딧 보유 → 게이트 통과. 공통 수정 경로로 실행 (무료 차감 포함).
+    await applyRevision(text.trim(), false);
   };
 
   // 내편 전략 제안(Step 2)에서 넘어온 수정 요청을 Step 3 진입 시 자동 실행 (FR-24)
@@ -998,32 +1039,65 @@ window.CreateScreen = function CreateScreen({ initialStep = 1, initialDocType = 
   const [chatLoading, setChatLoading] = React.useState(false);
   const [chatRiskChecking, setChatRiskChecking] = React.useState(false);
 
+  // 공통 수정 실행 (게이트 통과 후). isPaid=true 면 무료 차감 생략.
+  const applyChatRevision = async (userMsg, isPaid) => {
+    setChatMessages(m => [...m, { role: "user", text: userMsg }]);
+    setChatLoading(true);
+    try {
+      const revised = await window.LawAPI.revise({ draft: draftText, revisionRequest: userMsg, docType });
+      setDraftText(revised);
+      setChatMessages(m => [...m, { role: "ai", text: "수정이 완료되었습니다. 미리보기에서 변경 내용을 확인해 주세요." }]);
+      if (!isPaid) AuthStore.deductTrialRevision().catch(() => {});
+    } catch (e) {
+      setChatMessages(m => [...m, { role: "ai", text: `오류가 발생했습니다: ${e.message}` }]);
+    }
+    setChatLoading(false);
+  };
+
   const sendRevision = async (text) => {
     if (!text.trim() || chatLoading || chatRiskChecking) return;
+
+    // 결제(구매)로 유료 권한을 보유하면 무료 수정 횟수 게이트를 건너뛴다 (FR-30).
+    let hasPaidAccess = false;
+    try {
+      const access = await window.LawAPI.payment.accessCheck(docType);
+      hasPaidAccess = access && access.accessType === "paid";
+    } catch (_) {}
+
+    if (hasPaidAccess) {
+      await applyChatRevision(text.trim(), true);
+      return;
+    }
+
     const { data: credits } = await AuthStore.getCredits().catch(() => ({ data: null }));
     if (credits && credits.trial_revision_remaining <= 0) {
       const DOC_PRICES = { notice: 9900, brief: 49000, rebuttal: 69000 };
       const price = DOC_PRICES[docType] || 9900;
+      const pendingText = text.trim();
       setChatMessages(m => [...m, {
         role: "ai",
         text: "무료 수정 횟수(3회)를 모두 사용했습니다.\n계속 수정하려면 해당 문서를 구매해 주세요.",
       }]);
       const chatMeta = DocTypeMeta(docType);
-      window.openPaymentFlow({ docType: chatMeta.name, price, priceLabel: price.toLocaleString() + "원", onSuccess: () => {} });
+      // BUGFIX(버그2): 결제 성공 시 accessCheck 재조회 후 모달 없이 바로 수정 실행.
+      window.openPaymentFlow({
+        docType: chatMeta.name, price, priceLabel: price.toLocaleString() + "원",
+        context: 'revision',
+        onSuccess: async () => {
+          let isPaid = false;
+          try {
+            const a = await window.LawAPI.payment.accessCheck(docType);
+            isPaid = a && a.accessType === "paid";
+            console.log("[payment] 결제 후 accessCheck:", a && a.accessType);
+          } catch (_) {}
+          await applyChatRevision(pendingText, isPaid || true);
+        },
+      });
       return;
     }
-    const userMsg = text.trim();
-    setChatMessages(m => [...m, { role: "user", text: userMsg }]);
-    setChatLoading(true);
-    try {
-      const revised = await window.LawAPI.revise({ draft: draftText, revisionRequest: userMsg });
-      setDraftText(revised);
-      setChatMessages(m => [...m, { role: "ai", text: "수정이 완료되었습니다. 미리보기에서 변경 내용을 확인해 주세요." }]);
-      AuthStore.deductTrialRevision().catch(() => {});
-    } catch (e) {
-      setChatMessages(m => [...m, { role: "ai", text: `오류가 발생했습니다: ${e.message}` }]);
-    }
-    setChatLoading(false);
+
+    // 무료 크레딧 보유 → 게이트 통과.
+    await applyChatRevision(text.trim(), false);
   };
 
   const handleRiskCheck = () => {

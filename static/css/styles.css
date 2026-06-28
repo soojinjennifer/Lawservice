@@ -1414,8 +1414,11 @@ input, textarea, select { font: inherit; }
 /* 미리보기(step2) 문서 본문: 내용이 길어도 한 화면에 들어오고 영역만 스크롤
    (전역 .doc-preview/마이페이지 readonly에는 영향 없도록 스코프 한정) */
 .preview-document-panel .doc-preview {
-  max-height: calc(100vh - 300px);
+  min-height: 300px;
+  max-height: calc(100vh - 460px);
   overflow-y: auto;
+  overflow-x: hidden;
+  padding-bottom: 80px;
 }
 /* 수정(step3) 우측 패널 내 AI 어시스턴트 채팅: 증거목록 아래 고정 높이로 내부 스크롤 */
 .preview-evidence-panel .chat-panel {
@@ -1432,22 +1435,33 @@ input, textarea, select { font: inherit; }
   grid-template-columns: minmax(0, 1fr) 380px;
   gap: 24px;
   align-items: stretch;
+  min-height: 0;
 }
-.create-edit-layout .create-doc-col { min-width: 0; }
+/* min-height: 0 필수 — grid child에 overflow-y: auto가 동작하려면 부모 grid item이 축소 가능해야 함 */
+.create-edit-layout .create-doc-col {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
 .create-edit-layout .create-doc-col .doc-preview {
-  height: 100%;
-  max-height: calc(100vh - 320px);
+  flex: 1;
+  min-height: 300px;
+  max-height: calc(100vh - 460px);
   overflow-y: auto;
+  overflow-x: hidden;
+  padding-bottom: 80px;
 }
 /* 2단 안의 채팅 패널: 좌측 문서와 동일 높이로 늘어나고 내부만 스크롤 */
 .create-edit-layout .create-chat-col {
   display: flex;
   min-width: 0;
+  min-height: 0;
 }
 .create-edit-layout .create-chat-col .chat-panel {
   flex: 1;
-  height: auto;
-  max-height: calc(100vh - 320px);
+  min-height: 300px;
+  max-height: calc(100vh - 460px);
   border: 1px solid var(--color-neutral-stroke-2);
   border-radius: 12px;
   overflow: hidden;
