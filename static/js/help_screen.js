@@ -74,7 +74,7 @@ window.HelpScreen = function HelpScreen() {
     <div className="screen">
       <TopNav active="help" />
 
-      <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", minHeight: 840 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", minHeight: 840, maxWidth: 1440, margin: "0 auto", width: "100%" }}>
 
         {/* ── 좌측 사이드바 ───────────────────────────────── */}
         <aside style={{

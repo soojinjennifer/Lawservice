@@ -30,8 +30,8 @@ window.HomeScreen = function HomeScreen() {
       <TopNav active="home" />
 
       {/* ── Hero ──────────────────────────────────────────────── */}
-      <section style={{
-        padding: "80px 96px 96px",
+      <section className="screen-section" style={{
+        paddingTop: 80, paddingBottom: 96,
         display: "grid",
         gridTemplateColumns: "1.1fr 1fr",
         gap: 64,
@@ -43,7 +43,7 @@ window.HomeScreen = function HomeScreen() {
           </Badge>
 
           <h1 style={{
-            fontSize: 52, lineHeight: 1.1, fontWeight: 700,
+            fontSize: "clamp(36px, 4vw, 52px)", lineHeight: 1.1, fontWeight: 700,
             letterSpacing: "-0.03em", margin: "0 0 16px",
           }}>
             억울한 일을<br />
@@ -85,7 +85,7 @@ window.HomeScreen = function HomeScreen() {
         </div>
 
         {/* Hero 시각: 문서 미리보기 카드 */}
-        <div style={{ position: "relative", height: 420 }}>
+        <div style={{ position: "relative", height: 420, overflow: "hidden" }}>
           <CardFlat style={{
             position: "absolute", inset: "20px 40px 20px 0",
             fontFamily: "var(--font-family-serif)",
@@ -116,7 +116,7 @@ window.HomeScreen = function HomeScreen() {
 
           {/* AI 수정 채팅 미니 카드 */}
           <Card style={{
-            position: "absolute", bottom: 20, right: -20,
+            position: "absolute", bottom: 20, right: 0,
             width: 200, padding: 14,
             background: "var(--brand-light)",
             border: "1px solid var(--brand-light-2)",
@@ -143,7 +143,7 @@ window.HomeScreen = function HomeScreen() {
       />
 
       {/* ── 활용 방법 ─────────────────────────────────────────── */}
-      <section style={{ padding: "80px 96px", background: "var(--color-neutral-bg-alt)" }}>
+      <section className="screen-section" style={{ paddingTop: 80, paddingBottom: 80, background: "var(--color-neutral-bg-alt)" }}>
         <div style={{ textAlign: "center", marginBottom: 48 }}>
           <Badge variant="neutral" style={{ marginBottom: 12 }}>어떻게 사용하나요?</Badge>
           <h2 style={{ fontSize: 32, fontWeight: 700, letterSpacing: "-0.02em", margin: "0 0 12px" }}>
@@ -178,8 +178,8 @@ window.HomeScreen = function HomeScreen() {
       </section>
 
       {/* ── 문서 종류 ─────────────────────────────────────────── */}
-      <section style={{
-        padding: "80px 96px",
+      <section className="screen-section" style={{
+        paddingTop: 80, paddingBottom: 80,
         background: "#fff",
         borderTop: "1px solid var(--color-neutral-stroke-2)",
       }}>
@@ -200,7 +200,7 @@ window.HomeScreen = function HomeScreen() {
       </section>
 
       {/* ── 요금제 (건별 결제) ─────────────────────────────── */}
-      <section style={{ padding: "80px 96px", background: "var(--color-neutral-bg-alt)" }}>
+      <section className="screen-section" style={{ paddingTop: 80, paddingBottom: 80, background: "var(--color-neutral-bg-alt)" }}>
         <div style={{ textAlign: "center", marginBottom: 48 }}>
           <Badge variant="neutral" style={{ marginBottom: 12 }}>요금제</Badge>
           <h2 style={{ fontSize: 32, fontWeight: 700, letterSpacing: "-0.02em", margin: "0 0 12px" }}>
@@ -214,7 +214,7 @@ window.HomeScreen = function HomeScreen() {
       </section>
 
       {/* ── 법적 고지 (대시보드·마이페이지와 동일 규칙: 푸터 바로 위 풀폭) ── */}
-      <LegalNotice />
+      <div className="screen-section"><LegalNotice /></div>
 
       {/* ── 사이트 푸터 ────────────────────────────────────────── */}
       <SiteFooter />

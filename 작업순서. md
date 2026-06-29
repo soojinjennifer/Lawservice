@@ -26,3 +26,7 @@ Phase 4 — 품질 정리
   ⑰ PLAN_LIMITS / Plan 컴포넌트 / 구독 관련 코드 삭제
   ⑱ LegalNotice 전 화면 통일, SiteFooter 전 화면 적용
   ⑲ 전체 회귀 테스트 (기존 MVP 3종 문서 생성 흐름 확인)
+
+kill 
+
+fetch('/api/dev/reset', {method:'POST'}).then(r=>r.json()).then(console.log)

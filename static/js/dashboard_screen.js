@@ -73,8 +73,8 @@ window.DashboardScreen = function DashboardScreen() {
       <TopNav active="home" />
 
       {/* ── 1. Hero ─────────────────────────────────────────────── */}
-      <section style={{
-        padding: "80px 96px 96px",
+      <section className="screen-section" style={{
+        paddingTop: 80, paddingBottom: 96,
         display: "grid",
         gridTemplateColumns: "1.1fr 1fr",
         gap: 64,
@@ -86,7 +86,7 @@ window.DashboardScreen = function DashboardScreen() {
           </Badge>
 
           <h1 style={{
-            fontSize: 52, lineHeight: 1.1, fontWeight: 700,
+            fontSize: "clamp(36px, 4vw, 52px)", lineHeight: 1.1, fontWeight: 700,
             letterSpacing: "-0.03em", margin: "0 0 16px",
           }}>
             억울한 일을<br />
@@ -128,7 +128,7 @@ window.DashboardScreen = function DashboardScreen() {
         </div>
 
         {/* Hero 우측: 문서 미리보기 카드 + AI 어시스턴트 카드 */}
-        <div style={{ position: "relative", height: 420 }}>
+        <div style={{ position: "relative", height: 420, overflow: "hidden" }}>
           <CardFlat style={{
             position: "absolute", inset: "20px 40px 20px 0",
             fontFamily: "var(--font-family-serif)",
@@ -158,7 +158,7 @@ window.DashboardScreen = function DashboardScreen() {
           </CardFlat>
 
           <Card style={{
-            position: "absolute", bottom: 20, right: -20,
+            position: "absolute", bottom: 20, right: 0,
             width: 200, padding: 14,
             background: "var(--brand-light)",
             border: "1px solid var(--brand-light-2)",
@@ -185,8 +185,8 @@ window.DashboardScreen = function DashboardScreen() {
       />
 
       {/* ── 3. 지원 문서 ────────────────────────────────────────── */}
-      <section style={{
-        padding: "80px 96px",
+      <section className="screen-section" style={{
+        paddingTop: 80, paddingBottom: 80,
         background: "#fff",
         borderTop: "1px solid var(--color-neutral-stroke-2)",
       }}>
@@ -209,7 +209,7 @@ window.DashboardScreen = function DashboardScreen() {
       </section>
 
       {/* ── 4. 나의 진행 현황 ───────────────────────────────────── */}
-      <section style={{ padding: "60px 96px", background: "var(--color-neutral-bg-alt)" }}>
+      <section className="screen-section" style={{ paddingTop: 60, paddingBottom: 60, background: "var(--color-neutral-bg-alt)" }}>
         <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 28 }}>
           <div>
             <div style={{
@@ -244,7 +244,7 @@ window.DashboardScreen = function DashboardScreen() {
         )}
       </section>
 
-      <LegalNotice />
+      <div className="screen-section"><LegalNotice /></div>
       <SiteFooter />
     </div>
   );

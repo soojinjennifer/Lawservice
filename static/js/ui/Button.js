@@ -74,12 +74,13 @@ window.Btn = function Btn({
       <span className="spinner" style={{ width: 14, height: 14 }} />
       {children}
     </>
+  ) : isIconOnly ? (
+    iconEl
   ) : (
     <>
       {iconEl && iconPos === "left"  && iconEl}
-      {!isIconOnly && children}
+      {children}
       {iconEl && iconPos === "right" && iconEl}
-      {isIconOnly && iconEl}
     </>
   );
 

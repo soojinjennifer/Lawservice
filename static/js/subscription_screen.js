@@ -141,7 +141,7 @@ window.SubscriptionScreen = function SubscriptionScreen() {
           </div>
         </div>
       </div>
-      <LegalNotice />
+      <div className="screen-content" style={{ paddingTop: 0, paddingBottom: 0 }}><LegalNotice /></div>
       <SiteFooter />
     </div>
   );

@@ -131,6 +131,7 @@ window.TopNav = function TopNav({ active = "home", user = null }) {
   ];
   return (
     <header className="gnb">
+      <div className="gnb-inner">
       <div className="gnb-left">
         <ServiceMark />
         <nav className="gnb-nav">
@@ -171,6 +172,7 @@ window.TopNav = function TopNav({ active = "home", user = null }) {
             <button type="button" data-nav="/signup" className="btn btn-primary">무료로 시작하기</button>
           </>
         )}
+      </div>
       </div>
     </header>
   );

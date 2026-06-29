@@ -551,9 +551,18 @@ function StepPreview({ docType, draftText, generating, genError, onBack, onNext,
                   </div>
                   <div className="chat-composer-box">
                     <textarea rows={2} placeholder="다음 단계에서 수정 요청을 입력할 수 있어요" disabled />
-                    <button className="btn btn-primary btn-sm" style={{ width: 36, height: 32, padding: 0, borderRadius: 8 }} disabled>
-                      <Icon name="arrowUp" size={16} color="#fff" />
-                    </button>
+                    <div className="chat-composer-actions">
+                      <button className="icon-btn chat-composer-iconbtn" disabled title="파일 첨부" aria-label="파일 첨부">
+                        <Icon name="upload" size={16} color="var(--color-neutral-fg-3)" />
+                      </button>
+                      <button className="icon-btn chat-composer-iconbtn" disabled title="채팅창 늘리기" aria-label="채팅창 늘리기">
+                        <Icon name="chevronD" size={16} color="var(--color-neutral-fg-3)" />
+                      </button>
+                      <span className="chat-composer-spacer" />
+                      <button className="btn btn-primary btn-sm chat-composer-send" disabled>
+                        <Icon name="arrowUp" size={16} color="#fff" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -567,15 +576,26 @@ function StepPreview({ docType, draftText, generating, genError, onBack, onNext,
             </div>
           </div>
 
+          {/* 전폭 증거 자료 행 — EvidenceUploader preview 모드 재사용 (FR-17) */}
+          <div className="create-evidence-row">
+            <h3 className="section-title" style={{ fontSize: 15, marginBottom: 12 }}>
+              <Icon name="document" size={14} color="var(--color-neutral-fg-3)" /> 첨부한 증거 자료
+            </h3>
+            <EvidenceUploader mode="preview" evidenceList={evidenceList} aiExtract showDownloadButton={false} />
+          </div>
+
           {/* 전폭 하단 버튼 행 */}
           <div className="create-bottom-actions">
             <button className="btn btn-subtle" onClick={onBack}>
               <Icon name="chevronL" size={14} /> 이전 (정보 수정)
             </button>
             <div className="create-bottom-actions-right">
-              <button className="btn btn-secondary" onClick={onStrategyPropose} disabled={generating}>
-                <Icon name="sparkle" size={14} /> 내편 전략 제안
-              </button>
+              <div className="tooltip-wrap">
+                <div className="tooltip-bubble">생성된 초안을 더욱 설득력있도록<br />AI 가 전략을 제안합니다.</div>
+                <button className="btn btn-secondary" onClick={onStrategyPropose} disabled={generating}>
+                  <Icon name="sparkle" size={14} /> 내편 전략 제안
+                </button>
+              </div>
               <button className="btn btn-secondary" onClick={onRegenerate} disabled={generating}>
                 <Icon name="refresh" size={14} /> 다시 생성
               </button>
@@ -618,6 +638,9 @@ function StepEdit({ docType, draftText, setDraftText, onBack, onDownload, onRege
   const [input, setInput] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [riskChecking, setRiskChecking] = React.useState(false);
+  const [chatExpanded, setChatExpanded] = React.useState(false);
+  const [attachedFile, setAttachedFile] = React.useState(null); // 채팅 첨부 파일 (UI 표시용)
+  const fileInputRef = React.useRef(null);
   const [currentDraft, setCurrentDraft] = React.useState(draftText);
   // 수정으로 변경된 줄을 강조한 HTML (없으면 plain text 렌더) — FR-24
   const [highlightedDraft, setHighlightedDraft] = React.useState("");
@@ -895,34 +918,87 @@ function StepEdit({ docType, draftText, setDraftText, onBack, onDownload, onRege
                 </button>
               </div>
               <div className="chat-composer-box">
-                <textarea rows={2}
+                {attachedFile && (
+                  <div className="chat-attach-chip">
+                    <Icon name="upload" size={12} color="var(--brand-darker)" />
+                    <span className="chat-attach-name">{attachedFile.name}</span>
+                    <span
+                      className="chat-attach-remove"
+                      role="button"
+                      aria-label="첨부 파일 삭제"
+                      onClick={() => { setAttachedFile(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
+                    >
+                      <Icon name="dismiss" size={12} color="var(--brand-darker)" />
+                    </span>
+                  </div>
+                )}
+                <textarea
+                  rows={chatExpanded ? 8 : 2}
+                  className={chatExpanded ? "chat-textarea-expanded" : ""}
                   placeholder="어떤 부분을 수정할까요? (예: 4번 항목을 더 정중하게 바꿔줘)"
                   value={input}
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendRevision(input); } }}
                 />
-                <button className="btn btn-primary btn-sm" style={{ width: 36, height: 32, padding: 0, borderRadius: 8 }}
-                  onClick={() => sendRevision(input)} disabled={loading || riskChecking || !input.trim()}>
-                  <Icon name="arrowUp" size={16} color="#fff" />
-                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  style={{ display: "none" }}
+                  onChange={e => { const f = e.target.files && e.target.files[0]; if (f) setAttachedFile(f); }}
+                />
+                <div className="chat-composer-actions">
+                  <button
+                    className="icon-btn chat-composer-iconbtn"
+                    onClick={() => fileInputRef.current && fileInputRef.current.click()}
+                    disabled={loading || riskChecking}
+                    title="파일 첨부"
+                    aria-label="파일 첨부"
+                  >
+                    <Icon name="upload" size={16} color="var(--color-neutral-fg-3)" />
+                  </button>
+                  <button
+                    className="icon-btn chat-composer-iconbtn"
+                    onClick={() => setChatExpanded(v => !v)}
+                    title={chatExpanded ? "채팅창 줄이기" : "채팅창 늘리기"}
+                    aria-label={chatExpanded ? "채팅창 줄이기" : "채팅창 늘리기"}
+                  >
+                    <span style={{ display: "inline-flex", transform: chatExpanded ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>
+                      <Icon name="chevronD" size={16} color="var(--color-neutral-fg-3)" />
+                    </span>
+                  </button>
+                  <span className="chat-composer-spacer" />
+                  <button className="btn btn-primary btn-sm chat-composer-send"
+                    onClick={() => sendRevision(input)} disabled={loading || riskChecking || !input.trim()}>
+                    <Icon name="arrowUp" size={16} color="#fff" />
+                  </button>
+                </div>
               </div>
-              <p style={{ margin: 0, fontSize: 11, color: "var(--color-neutral-fg-3)", textAlign: "center" }}>
-                Shift+Enter로 줄바꿈, Enter로 전송
-              </p>
+              <div className="chat-composer-hint">Shift+Enter로 줄바꿈, Enter로 전송</div>
             </div>
           </div>
         </div>
       </div>
 
       {/* 전폭 하단 버튼 행 */}
+      {/* 전폭 증거 자료 행 — EvidenceUploader preview 모드 재사용 (FR-17) */}
+      <div className="create-evidence-row">
+        <h3 className="section-title" style={{ fontSize: 15, marginBottom: 12 }}>
+          <Icon name="document" size={14} color="var(--color-neutral-fg-3)" /> 첨부한 증거 자료
+        </h3>
+        <EvidenceUploader mode="preview" evidenceList={evidenceList} aiExtract showDownloadButton={false} />
+      </div>
+
       <div className="create-bottom-actions">
-        <button className="btn btn-subtle" onClick={onBack}>
-          <Icon name="chevronL" size={14} /> 이전 (미리보기)
+        <button className="btn btn-primary" onClick={onBack}>
+          <Icon name="chevronL" size={14} color="#fff" /> 내용입력
         </button>
         <div className="create-bottom-actions-right">
-          <button className="btn btn-secondary" onClick={() => onStrategyPropose(sendRevision)} disabled={loading || riskChecking}>
-            <Icon name="sparkle" size={14} /> 내편 전략 제안
-          </button>
+          <div className="tooltip-wrap">
+            <div className="tooltip-bubble">생성된 초안을 더욱 설득력있도록<br />AI 가 전략을 제안합니다.</div>
+            <button className="btn btn-secondary" onClick={() => onStrategyPropose(sendRevision)} disabled={loading || riskChecking}>
+              <Icon name="sparkle" size={14} /> 내편 전략 제안
+            </button>
+          </div>
           <button className="btn btn-secondary" onClick={onRegenerate} disabled={loading || riskChecking}>
             <Icon name="refresh" size={14} /> 다시 생성
           </button>
@@ -1283,6 +1359,7 @@ window.CreateScreen = function CreateScreen({ initialStep = 1, initialDocType = 
               handleApplySuggestion={handleApplySuggestion}
               handleDismissWarning={handleDismissWarning}
               quickSuggestions={QUICK_SUGGESTIONS}
+              evidenceList={(formData && formData.evidence_list) || []}
             />
           )}
           {step === 3 && (
@@ -1301,7 +1378,7 @@ window.CreateScreen = function CreateScreen({ initialStep = 1, initialDocType = 
         </div>
 
       </div>
-      <LegalNotice />
+      <div className="screen-content" style={{ paddingTop: 0, paddingBottom: 0 }}><LegalNotice /></div>
       <SiteFooter />
     </div>
   );

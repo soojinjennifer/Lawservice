@@ -37,6 +37,7 @@ window.SiteFooter = function SiteFooter() {
 
   return (
     <footer className="site-footer">
+      <div className="site-footer-inner">
       <div className="site-footer-grid">
         {/* 브랜드 컬럼 */}
         <div className="site-footer-brand">
@@ -45,7 +46,7 @@ window.SiteFooter = function SiteFooter() {
             억울한 일을 법률문서의 언어로 정리해드립니다.<br />
             변호사 상담 전, 내 사건을 가장 잘 아는 내가 직접 준비하는 내편문서 서비스.
           </p>
-          <p className="site-footer-brand-company">주식회사 더그라운드모여 (TheGroundMOYO Inc.)</p>
+          {/* <p className="site-footer-brand-company">주식회사 더그라운드모여 (TheGroundMOYO Inc.)</p> */}
         </div>
 
         {/* 링크 컬럼들 */}
@@ -66,6 +67,7 @@ window.SiteFooter = function SiteFooter() {
       <div className="site-footer-bottom">
         <span>© {year} 주식회사 더그라운드모여 · 내편문서가 생성하는 모든 문서는 참고용 초안이며 법적 효력을 보장하지 않습니다.</span>
         <span>copyright@TheGroundMOYO</span>
+      </div>
       </div>
     </footer>
   );
