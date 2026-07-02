@@ -1034,6 +1034,27 @@ function ClickableSteps({ current, onGoTo }) {
   );
 }
 
+// ── DB 연동 헬퍼 ──────────────────────────────────────────────
+
+// hash(#/create/3?doc_id=xxx)에서 doc_id 파싱
+function getDocIdFromUrl() {
+  const hash = window.location.hash;
+  const qi = hash.indexOf("?");
+  if (qi === -1) return null;
+  return new URLSearchParams(hash.slice(qi + 1)).get("doc_id") || null;
+}
+
+// 폼 데이터 기반 자동 제목 생성
+function _makeDocTitle(data, docType) {
+  if (!data) return "(작성 중)";
+  const receiver = data.receiver?.name || (typeof data.receiver === "string" ? data.receiver : "");
+  const caseNum  = data.caseInfo?.case_num || "";
+  if (docType === "notice")   return receiver ? `${receiver} - 내용증명` : "(작성 중)";
+  if (docType === "brief")    return [caseNum, receiver].filter(Boolean).join(" ") + " - 준비서면" || "(작성 중)";
+  if (docType === "rebuttal") return receiver ? `${receiver} 답변 반박` : "(작성 중)";
+  return "(작성 중)";
+}
+
 // ── 메인 CreateScreen ─────────────────────────────────────────
 window.CreateScreen = function CreateScreen({ initialStep = 1, initialDocType = "notice" }) {
   const [step, setStep]           = React.useState(initialStep);
@@ -1044,6 +1065,10 @@ window.CreateScreen = function CreateScreen({ initialStep = 1, initialDocType = 
   const [genError, setGenError]   = React.useState("");
   // 내편 전략 제안(Step 2) → Step 3 자동 수정 트리거 (FR-24)
   const [pendingRevision, setPendingRevision] = React.useState(null);
+
+  // ── DB 연동 상태 ──────────────────────────────────────────────
+  const [documentId, setDocumentId] = React.useState(null);
+  const [docStatus,  setDocStatus]  = React.useState("draft");
 
   // ── 증거 파일 state (StepInput에서 CreateScreen으로 lift) ────
   const [evidenceFiles, setEvidenceFiles] = React.useState(() => {
@@ -1106,6 +1131,26 @@ window.CreateScreen = function CreateScreen({ initialStep = 1, initialDocType = 
   };
 
   const handleEvidenceRemove = (i) => setEvidenceFiles(prev => prev.filter((_, idx) => idx !== i));
+
+  // ── URL doc_id로 기존 문서 복원 (로그인 상태에서만) ─────────────
+  React.useEffect(() => {
+    const docId = getDocIdFromUrl();
+    if (!docId) return;
+    const userId = window.AuthStore?.getUserId?.();
+    if (!userId) return;
+    (async () => {
+      try {
+        const doc = await window.LawAPI.documents.get(docId);
+        setDocumentId(doc.id);
+        setDocStatus(doc.status || "draft");
+        if (doc.input_data) setFormData(doc.input_data);
+        if (doc.draft_text) setDraftText(doc.draft_text);
+        setStep(Math.min(Math.max(doc.current_step || 1, 1), 3));
+      } catch (e) {
+        console.error("[DB] 문서 복원 실패, sessionStorage fallback:", e.message);
+      }
+    })();
+  }, []); // mount 1회
 
   // ── Chat state — Step2·3 공유 (StepEdit에서 CreateScreen으로 lift) ────
   const QUICK_SUGGESTIONS = ["더 강한 어조로", "더 정중한 표현으로", "법조항 인용 추가", "단락 요약"];
@@ -1214,9 +1259,41 @@ window.CreateScreen = function CreateScreen({ initialStep = 1, initialDocType = 
     setGenError("");
     setGenerating(true);
     setStep(2);
+
+    // DB: doc row가 없고 로그인 상태이면 신규 생성
+    let currentDocId = documentId;
+    if (!currentDocId) {
+      const uid = window.AuthStore?.getUserId?.();
+      if (uid) {
+        try {
+          const doc = await window.LawAPI.documents.create(docType);
+          currentDocId = doc.id;
+          setDocumentId(doc.id);
+          setDocStatus("draft");
+          const h = window.location.hash;
+          history.replaceState(null, "", h + (h.includes("?") ? "&" : "?") + "doc_id=" + doc.id);
+        } catch (e) {
+          console.error("[DB] 문서 row 생성 실패:", e.message);
+        }
+      }
+    }
+
     try {
       const draft = await window.LawAPI.generate(data);
       setDraftText(draft);
+
+      // DB: 초안 저장
+      if (currentDocId) {
+        window.LawAPI.documents.update(currentDocId, {
+          title: _makeDocTitle(data, docType),
+          status: "generated",
+          current_step: 2,
+          input_data: data,
+          draft_text: draft,
+        }).then(() => setDocStatus("generated"))
+          .catch(e => console.error("[DB] 초안 저장 실패:", e.message));
+      }
+
       if (deductNotice) {
         AuthStore.deductTrialNotice().catch(() => {}); // 차감 실패 시 UI는 진행
       }
@@ -1293,13 +1370,35 @@ window.CreateScreen = function CreateScreen({ initialStep = 1, initialDocType = 
   // 내편 전략 제안 → Step 3 이동 후 자동 수정 트리거 (FR-24)
   const handleStrategyRevise = (strategyText) => {
     setPendingRevision(strategyText);
+    _goToStep3();
+  };
+
+  // Step 2 → Step 3 전환 (DB PATCH 포함)
+  const _goToStep3 = () => {
     setStep(3);
+    if (documentId && !["saved", "delivered"].includes(docStatus)) {
+      window.LawAPI.documents.update(documentId, {
+        status: "in_review",
+        current_step: 3,
+        input_data: formData,
+        draft_text: draftText,
+      }).then(() => setDocStatus("in_review"))
+        .catch(e => console.error("[DB] Step3 전환 저장 실패:", e.message));
+    }
   };
 
   const handleDownload = async () => {
     if (!draftText) return;
     try {
       await window.LawAPI.downloadDocx({ text: draftText, title: docTypeKorMap[docType] || docType });
+      // 다운로드 성공 시에만 saved 상태로 업데이트
+      if (documentId) {
+        window.LawAPI.documents.update(documentId, {
+          status: "saved",
+          current_step: 3,
+        }).then(() => setDocStatus("saved"))
+          .catch(e => console.error("[DB] saved 업데이트 실패:", e.message));
+      }
     } catch (e) {
       alert("다운로드 오류: " + e.message);
     }
@@ -1347,7 +1446,7 @@ window.CreateScreen = function CreateScreen({ initialStep = 1, initialDocType = 
               generating={generating}
               genError={genError}
               onBack={() => setStep(1)}
-              onNext={() => setStep(3)}
+              onNext={_goToStep3}
               onRegenerate={() => formData && generate(formData)}
               onDownload={handleDownload}
               onStrategyRevise={handleStrategyRevise}

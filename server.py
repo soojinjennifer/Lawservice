@@ -959,6 +959,32 @@ def api_documents_create():
         return jsonify({"error": f"문서 생성 실패: {e}"}), 500
 
 
+@app.route("/api/documents/<doc_id>", methods=["GET"])
+def api_documents_get(doc_id):
+    """단건 조회 (draft_text·input_data 포함). user_id 소유권 검증 (§3.2)."""
+    user_id = _require_login()
+    if not user_id:
+        return jsonify({"error": "UNAUTHORIZED", "message": "로그인이 필요합니다."}), 401
+    sb = _get_supabase()
+    if sb is None:
+        return jsonify({"error": "SUPABASE_UNAVAILABLE",
+                        "message": "문서 저장소에 연결할 수 없습니다."}), 503
+
+    try:
+        res = (
+            sb.table("documents").select("*")
+            .eq("id", doc_id).eq("user_id", user_id)
+            .neq("status", "deleted")
+            .execute()
+        )
+        if not res.data:
+            return jsonify({"error": "NOT_FOUND",
+                            "message": "문서를 찾을 수 없거나 권한이 없습니다."}), 404
+        return jsonify(res.data[0])
+    except Exception as e:
+        return jsonify({"error": f"문서 조회 실패: {e}"}), 500
+
+
 @app.route("/api/documents/<doc_id>", methods=["PATCH"])
 def api_documents_update(doc_id):
     """문서 업데이트 (변경 필드만). user_id 소유권 검증 (§3.5)."""

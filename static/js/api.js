@@ -235,6 +235,16 @@ window.LawAPI.documents = {
     return data;
   },
 
+  // GET /api/documents/<id> → 단건 문서 (draft_text·input_data 포함)
+  async get(id) {
+    const res = await fetch("/api/documents/" + encodeURIComponent(id), {
+      headers: window.LawAPI._authHeaders(),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw window.LawAPI._makeApiError(res, data, "문서 조회에 실패했습니다.");
+    return data;
+  },
+
   // PATCH /api/documents/<id> → 갱신된 row
   async update(id, fields) {
     const res = await fetch("/api/documents/" + encodeURIComponent(id), {
