@@ -473,8 +473,16 @@ def api_generate():
         request_text=data.get("request", ""),
     )
     evidence_list = data.get("evidence_list", []) or []
+    app.logger.info(
+        "[generate] docType=%s user_present=%s has_key=%s fields=%s facts_len=%d",
+        doc_type,
+        user_id != "anonymous",
+        bool(api_key),
+        list(data.keys()),
+        len((data.get("facts") or "")),
+    )
     try:
-        client = anthropic.Anthropic(api_key=api_key)
+        client = anthropic.Anthropic(api_key=api_key, timeout=90.0, max_retries=1)
         resp = client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=8000,
@@ -487,8 +495,30 @@ def api_generate():
         if doc_type_en in DOC_PRICES:
             record_generate_use(user_id, doc_type_en)
         return jsonify({"draft": draft})
+    except anthropic.APITimeoutError:
+        app.logger.warning("[generate] Claude timeout: docType=%s", doc_type)
+        return jsonify({
+            "error": "CLAUDE_TIMEOUT",
+            "message": "생성 시간이 초과되었습니다. 입력 내용을 조금 줄이거나 다시 시도해주세요.",
+        }), 504
+    except anthropic.AuthenticationError:
+        app.logger.error("[generate] Anthropic API key rejected")
+        return jsonify({
+            "error": "ANTHROPIC_KEY_MISSING",
+            "message": "AI 문서 생성 설정이 완료되지 않았습니다. 관리자에게 문의해주세요.",
+        }), 500
+    except anthropic.BadRequestError as e:
+        app.logger.warning("[generate] bad request: %s", e)
+        return jsonify({
+            "error": "INVALID_DOC_TYPE",
+            "message": "문서 생성 요청이 올바르지 않습니다. 입력값을 확인해주세요.",
+        }), 400
     except Exception as e:
-        return jsonify({"error": f"Claude 호출 실패: {e}"}), 500
+        app.logger.exception("[generate] unexpected error: docType=%s", doc_type)
+        return jsonify({
+            "error": "GENERATE_FAILED",
+            "message": "서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        }), 500
 
 
 @app.route("/api/revise", methods=["POST"])

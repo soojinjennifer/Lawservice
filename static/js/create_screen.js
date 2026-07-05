@@ -1322,7 +1322,26 @@ window.CreateScreen = function CreateScreen({ initialStep = 1, initialDocType = 
         }
         return;
       }
-      setGenError(e.message);
+      // 생성 실패 시 facts·request·timeline을 sessionStorage에 자동 저장 → 이전 버튼 클릭 시 복원
+      try {
+        const prev = JSON.parse(sessionStorage.getItem(DRAFT_STORAGE_KEY)) || {};
+        sessionStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify({
+          ...prev,
+          docType: data.docType || docType,
+          facts: data.facts || prev.facts || "",
+          request: data.request || prev.request || "",
+          timeline: (data.timelineEvents || []).map(ev => ({ date: ev.time || "", event: ev.content || "" })),
+        }));
+      } catch (_) {}
+      // 상태 코드별 사용자 안내 메시지 (FR-30 403은 위에서 처리)
+      const _STATUS_MSG = {
+        400: "입력값을 확인해주세요.",
+        401: "로그인이 필요합니다.",
+        402: "결제가 필요한 문서입니다.",
+        500: "AI 문서 생성 설정 또는 서버 처리 중 문제가 발생했습니다.",
+        504: "생성 시간이 초과되었습니다. 입력 내용을 조금 줄이거나 다시 시도해주세요.",
+      };
+      setGenError(_STATUS_MSG[status] || e.message || "초안 생성에 실패했습니다.");
     }
     setGenerating(false);
   };
