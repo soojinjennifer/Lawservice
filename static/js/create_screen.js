@@ -283,7 +283,7 @@ function StepInput({ docType, setDocType, onSubmit, evidenceFiles = [], onEviden
           </div>
           {timeline.map((row, i) => (
             <div key={i} className="timeline-row">
-              <TextInput placeholder="2025-01-01" value={row.date} onChange={e => updateRow(i, "date", e.target.value)} />
+              <DatePickerInput value={row.date} onChange={val => updateRow(i, "date", val)} />
               <TextInput placeholder="사건 내용" value={row.event} onChange={e => updateRow(i, "event", e.target.value)} />
               <Btn variant="icon" icon="trash" aria-label="삭제" onClick={() => removeRow(i)} />
             </div>

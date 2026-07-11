@@ -54,6 +54,7 @@ window.Icon = function Icon({ name, size = 20, filled = false, color = "currentC
     lock: <g fill="none" stroke={color} strokeWidth="1.4"><rect x="4" y="9" width="12" height="8" rx="1.5"/><path d="M6.5 9V6.5a3.5 3.5 0 0 1 7 0V9"/></g>,
     shield: <g fill="none" stroke={color} strokeWidth="1.4" strokeLinejoin="round"><path d="M10 2.5 4 5v5c0 4 2.5 6.5 6 7.5 3.5-1 6-3.5 6-7.5V5z"/><path d="m7.5 10 2 2 3.5-4"/></g>,
     clock: <g fill="none" stroke={color} strokeWidth="1.4"><circle cx="10" cy="10" r="7.5"/><path d="M10 6v4l3 2" strokeLinecap="round"/></g>,
+    calendar: <g fill="none" stroke={color} strokeWidth="1.4" strokeLinecap="round"><rect x="3" y="4" width="14" height="13" rx="1.5"/><path d="M7 2.5v3M13 2.5v3"/><path d="M3 9h14"/></g>,
     gavel: <g fill="none" stroke={color} strokeWidth="1.4" strokeLinejoin="round"><path d="m4 16 6-6 2 2-6 6z"/><path d="m9 9 5-5m-2-1 4 4-2 2-4-4z"/><path d="M3 18h8"/></g>,
     book: <g fill="none" stroke={color} strokeWidth="1.4"><path d="M3 4.5C5 4 7 4 10 5c3-1 5-1 7-.5V16c-2-.5-4-.5-7 .5-3-1-5-1-7-.5z"/><path d="M10 5v11.5"/></g>,
     folder: filled

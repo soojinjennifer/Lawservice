@@ -912,6 +912,144 @@ input, textarea, select { font: inherit; }
 .timeline-row .input { height: 36px; }
 .timeline-row .textarea { min-height: 36px; }
 
+/* ── DatePickerInput + 커스텀 캘린더 팝업 ── */
+.date-picker-wrap { position: relative; }
+
+.date-picker-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.date-picker-field .input {
+  width: 100%;
+  padding-right: 34px;
+  box-sizing: border-box;
+}
+.date-picker-btn {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: var(--color-neutral-fg-3);
+  line-height: 1;
+}
+.date-picker-btn:hover { color: var(--brand-rest); background: var(--brand-light); }
+.date-picker-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* 팝업 컨테이너 */
+.dpp {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 300;
+  background: var(--color-neutral-bg-1, #fff);
+  border: 1px solid var(--color-neutral-stroke-2, #e0e0e0);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  padding: 14px;
+  width: 252px;
+}
+
+/* 월 이동 헤더 */
+.dpp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.dpp-title { font-size: 14px; font-weight: 700; color: var(--color-neutral-fg-1); }
+.dpp-nav {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  color: var(--color-neutral-fg-2);
+}
+.dpp-nav:hover { background: var(--color-neutral-bg-2, #f5f5f5); }
+
+/* 날짜 그리드 (요일 헤더 + 날짜 셀) */
+.dpp-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  text-align: center;
+}
+.dpp-wday {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-neutral-fg-3, #999);
+  padding: 4px 0 6px;
+}
+.dpp-wday.dpp-sun { color: var(--color-status-danger-fg, #e53e3e); }
+.dpp-wday.dpp-sat { color: var(--brand-rest, #2D4DAA); }
+
+.dpp-day {
+  font-size: 13px;
+  padding: 6px 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+  color: var(--color-neutral-fg-1);
+  line-height: 1;
+  width: 100%;
+}
+.dpp-day:hover:not(.dpp-day--selected) { background: var(--color-neutral-bg-2, #f0f0f0); }
+.dpp-day--sun { color: var(--color-status-danger-fg, #e53e3e); }
+.dpp-day--sat { color: var(--brand-rest, #2D4DAA); }
+.dpp-day--today {
+  font-weight: 700;
+  color: var(--brand-rest, #2D4DAA);
+  border: 1.5px solid var(--brand-rest, #2D4DAA);
+}
+.dpp-day--selected {
+  background: var(--brand-rest, #2D4DAA);
+  color: #fff;
+  font-weight: 700;
+}
+
+/* 푸터: 오늘 + 닫기 */
+.dpp-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-neutral-stroke-2, #e0e0e0);
+}
+.dpp-today {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--brand-rest, #2D4DAA);
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.dpp-today:hover { background: var(--brand-light, #E9F6FF); }
+.dpp-close {
+  background: none;
+  border: 1px solid var(--color-neutral-stroke-2, #e0e0e0);
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--color-neutral-fg-2);
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+.dpp-close:hover { background: var(--color-neutral-bg-2, #f5f5f5); }
+
 /* ── Doc type picker ────────────────────────────────────────── */
 .doctype-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
 .doctype-card {
