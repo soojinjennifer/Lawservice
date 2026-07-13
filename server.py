@@ -26,7 +26,7 @@ from datetime import date, datetime
 from dotenv import load_dotenv
 load_dotenv(override=True)
 
-from flask import Flask, jsonify, render_template, request, send_file, send_from_directory
+from flask import Flask, Response, jsonify, render_template, request, send_file, send_from_directory
 import anthropic
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -419,6 +419,11 @@ def _strip_preview_only_notes(text: str) -> str:
 
 
 # ── 라우트 ────────────────────────────────────────────────────
+@app.route("/robots.txt")
+def robots_txt():
+    content = "User-agent: *\nAllow: /\n"
+    return Response(content, mimetype="text/plain")
+
 @app.route("/")
 def index():
     return render_template(
