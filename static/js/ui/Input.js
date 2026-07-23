@@ -36,6 +36,7 @@ window.TextInput = function TextInput({
   ...rest
 }) {
   const [visible, setVisible] = React.useState(false);
+  const inputRef = React.useRef(null);
   const uid = id || (label ? label.replace(/\s/g, "_") + "_" + Math.random().toString(36).slice(2,6) : undefined);
   const sizeClass = size === "lg" ? " input-lg" : size === "sm" ? " input-sm" : "";
   const cls = ["input", sizeClass, className].filter(Boolean).join(" ");
@@ -59,6 +60,9 @@ window.TextInput = function TextInput({
           </span>
         )}
         <input
+          {...rest}
+          key={resolvedType}
+          ref={inputRef}
           id={uid}
           type={resolvedType}
           className={cls}
@@ -71,13 +75,16 @@ window.TextInput = function TextInput({
             paddingRight: showToggle   ? 40 : undefined,
             borderColor:  isError ? "var(--color-status-danger-fg)" : undefined,
           }}
-          {...rest}
         />
         {/* 비밀번호 보기/숨기기 토글 */}
         {showToggle && type === "password" && (
           <button
             type="button"
-            onClick={() => setVisible(v => !v)}
+            onClick={() => {
+              setVisible(v => !v);
+              // key 변경으로 input이 재마운트되므로 포커스를 되돌려준다 (일부 브라우저의 password↔text 미갱신 버그 회피).
+              requestAnimationFrame(() => { if (inputRef.current) inputRef.current.focus(); });
+            }}
             aria-label={visible ? "비밀번호 숨기기" : "비밀번호 보기"}
             style={{
               position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",

@@ -11,8 +11,11 @@ window.AuthScreen = function AuthScreen() {
   const [error,    setError]    = React.useState("");
   const [loading,  setLoading]  = React.useState(false);
 
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
   const validate = () => {
     if (!email.trim())    return "이메일을 입력해 주세요.";
+    if (!EMAIL_RE.test(email.trim())) return "이메일을 형식에 맞게 입력해 주세요.";
     if (!name.trim())     return "이름 또는 닉네임을 입력해 주세요.";
     if (password.length < 8) return "비밀번호는 8자 이상이어야 합니다.";
     if (!agreed)          return "이용약관 및 개인정보처리방침에 동의해 주세요.";
@@ -27,10 +30,19 @@ window.AuthScreen = function AuthScreen() {
     setError("");
     setLoading(true);
 
-    const { error: signUpError } = await AuthStore.signUp({ email, password, name });
+    const { data, error: signUpError } = await AuthStore.signUp({ email, password, name });
 
     if (signUpError) {
-      setError(signUpError.message || "회원가입에 실패했습니다. 다시 시도해 주세요.");
+      const isDuplicate = /already registered|already exists/i.test(signUpError.message || "");
+      setError(isDuplicate ? "이미 회원가입이 되었습니다." : (signUpError.message || "회원가입에 실패했습니다. 다시 시도해 주세요."));
+      setLoading(false);
+      return;
+    }
+
+    // 이메일 열거 공격 방지 설정이 켜진 프로젝트는 이미 가입된 이메일이어도 에러 없이
+    // "성공"처럼 응답하되 identities가 빈 배열로 온다 — 이 경우도 중복 가입으로 처리.
+    if (data && data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+      setError("이미 회원가입이 되었습니다.");
       setLoading(false);
       return;
     }

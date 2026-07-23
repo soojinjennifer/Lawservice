@@ -320,6 +320,14 @@ button, input, textarea, select, optgroup, code, kbd, pre,
   font-family: var(--font-family-base) !important;
 }
 
+/* 비밀번호 마스킹(●) 렌더링 예외: NanumSquare(커스텀 TTF)가 -webkit-text-security
+   글리프를 표시하지 못하는 브라우저 렌더링 이슈가 있어, 비밀번호 입력창은
+   시스템 폰트 스택만 사용한다. */
+input[type="password"] {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif !important;
+}
+
 /* Exception: 초안 미리보기 영역은 원래 서식(명조체/맑은고딕) 그대로 유지 */
 .doc-preview,
 .doc-preview *:not(.doc-footer-note):not(.doc-footer-note *) {

@@ -9,10 +9,13 @@ window.LoginScreen = function LoginScreen() {
   const [error,     setError]    = React.useState("");
   const [loading,   setLoading]  = React.useState(false);
 
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     // Supabase 호출 전 선검증
     if (!email.trim())    { setError("이메일을 입력해 주세요."); return; }
+    if (!EMAIL_RE.test(email.trim())) { setError("이메일을 형식에 맞게 입력해 주세요."); return; }
     if (!password.trim()) { setError("비밀번호를 입력해 주세요."); return; }
     setError("");
     setLoading(true);
