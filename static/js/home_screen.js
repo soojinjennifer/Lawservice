@@ -3,6 +3,12 @@
 //               PaymentCardGrid · LegalNotice · SiteFooter
 
 window.HomeScreen = function HomeScreen() {
+  // ── 베타 팝업 ──
+  const [showBetaPopup, setShowBetaPopup] = React.useState(false);
+  React.useEffect(() => {
+    if (!window.betaSkippedToday()) setShowBetaPopup(true);
+  }, []);
+
   // 활용 방법 3단계
   const HOW_STEPS = [
     {
@@ -27,6 +33,7 @@ window.HomeScreen = function HomeScreen() {
 
   return (
     <div className="screen">
+      {showBetaPopup && <BetaPopup onClose={() => setShowBetaPopup(false)} />}
       <TopNav active="home" />
 
       {/* ── Hero ──────────────────────────────────────────────── */}
