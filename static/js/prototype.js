@@ -5,26 +5,27 @@ window.FAQScreen = function FAQScreen() {
   const faqs = [
     { q: "AI가 생성한 문서를 그대로 제출해도 되나요?",
       a: "본 서비스가 생성하는 모든 문서는 '참고용 초안'입니다. 법적 효력이나 정확성을 보장하지 않으므로, 실제 발송·제출 전 변호사 검토를 권고드립니다." },
-    { q: "API 키는 어디에 입력해야 하나요?",
-      a: "API 키는 서버의 .env 파일에 저장되어 있으며, 사용자 화면에서는 노출되지 않습니다. 서버 관리자가 설정합니다." },
+   /*{ q: "API 키는 어디에 입력해야 하나요?",
+      a: "API 키는 서버의 .env 파일에 저장되어 있으며, 사용자 화면에서는 노출되지 않습니다. 서버 관리자가 설정합니다." },*/
     { q: "내가 입력한 사건 정보는 어디에 저장되나요?",
-      a: "사건 정보는 AI 초안 생성에만 사용되며, 서버에 별도로 저장되지 않습니다." },
+      a: "사건 정보는 AI 초안 생성에만 사용되며, 서버나 어떠한 곳에도 별도로 저장되지 않으니 걱정하지 않으셔도 됩니다. 마이페이지에 생성한 문서의 이력 정보는 조회하실 수 있도록 제공되므로, 이력 정보는 확인하실 수 있습니다. " },
     { q: "생성된 문서를 어떻게 저장하나요?",
-      a: "초안 미리보기 또는 수정 화면에서 '.docx 받기' 버튼을 클릭하면 Word 문서 형식으로 다운로드됩니다." },
-    { q: "계약서 기능은 언제 사용할 수 있나요?",
-      a: "계약서는 현재 개발 중으로, 곧 오픈될 예정입니다." },
+      a: "저희 서비스는 개인정보 보안을 위해, 어느 곳에도 내용은 저장하지 않습니다. 문서는 생성 후 다운로드 형태로 제공하며, 초안 미리보기 또는 수정 화면에서 '.docx 받기' 버튼을 클릭하면 Word 문서 형식으로 다운로드됩니다." },
+    { q: "항소이유서와 계약서 등 다른 문서 생성 기능은 언제 사용할 수 있나요?",
+      a: "항소 이휴서와 계약서는 다양한 형태의 문서를 AI 학습을 통해 개발 중입니다. 오픈 일정은 추후 공지될 예정입니다.오픈시 기존 회원님들께는 특별한 혜택이 제공될 예정입니다." },
   ];
 
   return (
     <div className="screen">
       <TopNav active="faq" />
-      <div className="screen-content" style={{ maxWidth: 880, margin: "0 auto" }}>
+      <div className="screen-content" style={{ maxWidth: 880, margin: "0 auto", paddingBottom: 64 }}>
         <h1 style={{ fontSize: 30, fontWeight: 700, letterSpacing: "-0.02em", margin: "0 0 8px" }}>자주 묻는 질문</h1>
         <p className="muted" style={{ margin: "0 0 32px", fontSize: 15 }}>서비스 이용 관련 안내입니다.</p>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {faqs.map((f, i) => <AccordionItem key={i} {...f} defaultOpen={i === 0} />)}
         </div>
       </div>
+      <SiteFooter />
     </div>
   );
 };
