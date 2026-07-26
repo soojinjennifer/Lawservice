@@ -682,6 +682,32 @@ input, textarea, select { font: inherit; }
 .msgbar-info { background: var(--brand-light); color: var(--brand-rest); border-color: var(--brand-light-2); }
 .msgbar-warn { background: var(--color-status-warning-bg); color: var(--color-status-warning-fg); border-color: var(--color-status-warning-border); }
 .msgbar-success { background: var(--color-status-success-bg); color: var(--color-status-success-fg); border-color: var(--color-status-success-border); }
+
+/* ── 참고용 초안 안내 스트립 (footer 위 풀폭) ── */
+.legal-notice-strip {
+  width: 100%;
+  background: var(--color-status-warning-bg);
+  color: var(--color-status-warning-fg);
+}
+.legal-notice-strip-inner {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 14px 96px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 18px;
+}
+@media (max-width: 1280px) {
+  .legal-notice-strip-inner { padding-left: 48px; padding-right: 48px; }
+}
+@media (max-width: 960px) {
+  .legal-notice-strip-inner { padding-left: 24px; padding-right: 24px; }
+}
+@media (max-width: 640px) {
+  .legal-notice-strip-inner { padding-left: 16px; padding-right: 16px; }
+}
 .msgbar-danger { background: var(--color-status-danger-bg); color: var(--color-status-danger-fg); border-color: var(--color-status-danger-border); }
 
 /* ── Misc layout helpers ────────────────────────────────────── */
@@ -692,7 +718,7 @@ input, textarea, select { font: inherit; }
   flex-direction: column;
   min-height: 100vh;
 }
-.screen-content { max-width: 1440px; margin: 0 auto; padding: 32px 48px; }
+.screen-content { width: 100%; max-width: 1440px; margin: 0 auto; padding: 32px 48px; box-sizing: border-box; }
 .section-title { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; margin: 0; }
 .muted { color: var(--color-neutral-fg-3); }
 .divider { height: 1px; background: var(--color-neutral-stroke-2); border: 0; margin: 0; }
@@ -1341,7 +1367,7 @@ input, textarea, select { font: inherit; }
 /* ── Modal 오버레이 ────────────────────────────────────────── */
 .modal-backdrop {
   position: fixed; inset: 0; z-index: 8000;
-  background: rgba(0,0,0,.45);
+  background: rgba(0,0,0,.50);
   display: flex; align-items: center; justify-content: center;
   padding: 24px;
   animation: fadeIn .15s ease;
@@ -1362,6 +1388,55 @@ input, textarea, select { font: inherit; }
 .modal-sm  { max-width: 400px; }
 .modal-md  { max-width: 560px; }
 .modal-lg  { max-width: 720px; }
+.modal-xl  { max-width: 960px; }
+
+/* ── 약관·개인정보 문서 모달 (type=document) ── */
+.modal.modal-doc {
+  width: 880px;
+  height: 760px;
+  max-height: calc(100vh - 96px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 16px;
+}
+.modal-doc-header {
+  flex-shrink: 0;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 40px;
+  border-bottom: 1px solid var(--color-neutral-stroke-2);
+}
+.modal-doc-header .modal-title { font-size: 20px; }
+.modal-doc-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 28px 40px;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--color-neutral-fg-1);
+}
+.modal-doc-footer {
+  flex-shrink: 0;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-top: 1px solid var(--color-neutral-stroke-2);
+}
+.modal-doc-body h1 { font-size: 18px; font-weight: 700; margin: 0 0 16px; }
+.modal-doc-body h2 { font-size: 15px; font-weight: 700; margin: 20px 0 6px; color: var(--color-neutral-fg-1); }
+.modal-doc-body p  { margin: 0 0 10px; }
+.modal-doc-body ul { margin: 0 0 10px; padding-left: 20px; }
+.modal-doc-body li { margin-bottom: 4px; }
+.modal-doc-body .legal-meta { font-size: 13px; color: var(--color-neutral-fg-3); margin-bottom: 20px; }
+.modal-doc-body table { width: 100%; border-collapse: collapse; margin: 8px 0 14px; font-size: 13px; }
+.modal-doc-body table th,
+.modal-doc-body table td { border: 1px solid var(--color-neutral-stroke-2); padding: 8px 12px; text-align: left; }
+.modal-doc-body table th { background: var(--color-neutral-bg-alt); font-weight: 600; }
+
 .modal-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 24px 28px 0;

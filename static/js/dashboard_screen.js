@@ -244,7 +244,7 @@ window.DashboardScreen = function DashboardScreen() {
         )}
       </section>
 
-      <div className="screen-section"><LegalNotice /></div>
+      <LegalNotice />
       <SiteFooter />
     </div>
   );

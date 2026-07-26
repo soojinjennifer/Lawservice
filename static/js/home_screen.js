@@ -214,7 +214,7 @@ window.HomeScreen = function HomeScreen() {
       </section>
 
       {/* ── 법적 고지 (대시보드·마이페이지와 동일 규칙: 푸터 바로 위 풀폭) ── */}
-      <div className="screen-section"><LegalNotice /></div>
+      <LegalNotice />
 
       {/* ── 사이트 푸터 ────────────────────────────────────────── */}
       <SiteFooter />

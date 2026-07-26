@@ -169,8 +169,8 @@ window.AuthScreen = function AuthScreen() {
               style={{ width: 16, height: 16, marginTop: 2, accentColor: "var(--brand-rest)", flexShrink: 0 }}
             />
             <span>
-              <a href="#/terms" style={{ color: "var(--brand-rest)", fontWeight: 600 }}>이용약관</a> 및{" "}
-              <a href="#/privacy" style={{ color: "var(--brand-rest)", fontWeight: 600 }}>개인정보처리방침</a>에
+              <a href="#" onClick={e => { e.preventDefault(); window.openLegalModal("terms"); }} style={{ color: "var(--brand-rest)", fontWeight: 600 }}>이용약관</a> 및{" "}
+              <a href="#" onClick={e => { e.preventDefault(); window.openLegalModal("privacy"); }} style={{ color: "var(--brand-rest)", fontWeight: 600 }}>개인정보처리방침</a>에
               동의합니다. <span style={{ color: "var(--color-status-danger-fg)" }}>*</span>
             </span>
           </label>

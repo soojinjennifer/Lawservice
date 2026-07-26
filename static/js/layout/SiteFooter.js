@@ -19,17 +19,15 @@ window.SiteFooter = function SiteFooter() {
       title: "고객지원",
       links: [
         { label: "FAQ",              path: "/faq" },
-        { label: "문의하기",         href: "mailto:cs@thegroundmoyo.com" },
-        { label: "공지사항",         href: "#" },
+        { label: "문의하기",         href: "mailto:moyo@thegroundmoyo.com" },
         { label: "이용 가이드",      path: "/help" },
       ],
     },
     {
       title: "회사",
       links: [
-        { label: "회사 소개",          href: "#" },
-        { label: "이용약관",           href: "#" },
-        { label: "개인정보처리방침",   href: "#" },
+          { label: "이용약관",           onClick: () => window.openLegalModal("terms") },
+        { label: "개인정보처리방침",   onClick: () => window.openLegalModal("privacy") },
         { label: "AI 윤리정책",        href: "#" },
       ],
     },
@@ -55,9 +53,11 @@ window.SiteFooter = function SiteFooter() {
             <div className="site-footer-col-title">{col.title}</div>
             <div className="site-footer-col-links">
               {col.links.map(link => (
-                link.href
-                  ? <a key={link.label} href={link.href} target={link.href.startsWith("mailto") ? undefined : "_blank"} rel="noopener noreferrer">{link.label}</a>
-                  : <button key={link.label} type="button" data-nav={link.path}>{link.label}</button>
+                link.onClick
+                  ? <button key={link.label} type="button" onClick={link.onClick}>{link.label}</button>
+                  : link.href
+                    ? <a key={link.label} href={link.href} target={link.href.startsWith("mailto") ? undefined : "_blank"} rel="noopener noreferrer">{link.label}</a>
+                    : <button key={link.label} type="button" data-nav={link.path}>{link.label}</button>
               ))}
             </div>
           </div>

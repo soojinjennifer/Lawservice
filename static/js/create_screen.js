@@ -1496,7 +1496,7 @@ window.CreateScreen = function CreateScreen({ initialStep = 1, initialDocType = 
         </div>
 
       </div>
-      <div className="screen-content" style={{ paddingTop: 0, paddingBottom: 0 }}><LegalNotice /></div>
+      <LegalNotice />
       <SiteFooter />
     </div>
   );

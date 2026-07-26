@@ -224,7 +224,7 @@ window.MyDocsScreen = function MyDocsScreen() {
         </div>
       </div>
 
-      <div className="screen-content" style={{ paddingTop: 0, paddingBottom: 0 }}><LegalNotice /></div>
+      <LegalNotice />
       <SiteFooter />
     </div>
   );

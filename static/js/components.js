@@ -140,7 +140,7 @@ window.TopNav = function TopNav({ active = "home", user = null }) {
     { id: "home",   label: "홈",           path: "/" },
     { id: "create", label: "문서 생성",    path: "/create/1" },
     { id: "help",   label: "도움말",       path: "/help" },
-    { id: "mypage", label: "나의 문서",    path: "/mydocs" },
+    { id: "mypage", label: "마이페이지",    path: "/mydocs" },
     { id: "faq",    label: "FAQ",         path: "/faq" },
   ];
   return (
@@ -301,12 +301,14 @@ window.LegalNotice = function LegalNotice({ compact = false }) {
     );
   }
   return (
-    <div className="msgbar msgbar-info" style={{ alignItems: "flex-start" }}>
-      <Icon name="shield" size={16} color="currentColor" />
-      <div>
-        <div style={{ fontWeight: 600, marginBottom: 2 }}>참고용 초안 안내</div>
-        <div style={{ color: "var(--color-neutral-fg-2)", fontSize: 12, lineHeight: "18px" }}>
-          본 서비스가 생성한 모든 문서는 참고용 초안입니다. 법적 효력이나 정확성을 보장하지 않으며, 실제 제출 전 변호사 검토를 권고합니다.
+    <div className="legal-notice-strip">
+      <div className="legal-notice-strip-inner">
+        <Icon name="shield" size={16} color="currentColor" />
+        <div>
+          <div style={{ fontWeight: 600, marginBottom: 2 }}>참고용 초안 안내</div>
+          <div style={{ fontSize: 12, lineHeight: "18px" }}>
+            본 서비스가 생성한 모든 문서는 참고용 초안입니다. 법적 효력이나 정확성을 보장하지 않으며, 실제 제출 전 변호사 검토를 권고합니다.
+          </div>
         </div>
       </div>
     </div>

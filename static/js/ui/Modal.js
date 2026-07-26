@@ -40,6 +40,28 @@ window.AppModalRoot = function AppModalRoot() {
     window.AppModal.close();
   };
 
+  // document 타입: 고정 헤더+스크롤 바디+푸터 레이아웃
+  if (type === "document") {
+    return (
+      <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) handleClose(); }}>
+        <div className={`modal modal-doc ${sizeClass}`} role="dialog" aria-modal="true" aria-labelledby="modal-title">
+          <div className="modal-doc-header">
+            <h2 id="modal-title" className="modal-title">{title}</h2>
+            <button className="icon-btn" aria-label="닫기" onClick={handleClose}>
+              <Icon name="dismiss" size={18} />
+            </button>
+          </div>
+          <div className="modal-doc-body">{body}</div>
+          <div className="modal-doc-footer">
+            <button className="btn btn-primary btn-lg" style={{ minWidth: 120 }} onClick={handleClose}>
+              확인
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const iconMap = { confirm: "check", guide: "help", warning: "bolt", payment: "creditCard" };
   const iconColorMap = {
     confirm: "var(--brand-rest)",
