@@ -114,6 +114,20 @@ window.TopNav = function TopNav({ active = "home", user = null }) {
     window.location.hash = "/";
   };
 
+  // 채널톡 고객 문의 열기 — ChannelIO 미로드 시 Toast로 안내
+  const openChannelTalk = () => {
+    if (typeof window.ChannelIO !== "function") {
+      if (window.ToastManager) {
+        window.ToastManager.show({
+          type: "error",
+          message: "상담 기능을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.",
+        });
+      }
+      return;
+    }
+    window.ChannelIO("showMessenger");
+  };
+
   // 크레딧 pill 표시: 내용증명 또는 수정 잔여가 있을 때만
   const showCreditPill = credits &&
     (credits.trial_notice_remaining > 0 || credits.trial_revision_remaining > 0);
@@ -145,6 +159,16 @@ window.TopNav = function TopNav({ active = "home", user = null }) {
       </div>
       <div />
       <div className="gnb-right">
+        {/* 고객 문의 버튼 — 로그인/비로그인 공통 표시, 채널톡 상담창 열기 */}
+        <button
+          type="button"
+          className="icon-btn"
+          aria-label="고객 문의하기"
+          title="문의하기"
+          onClick={openChannelTalk}
+        >
+          <Icon name="help" />
+        </button>
         {/* 인증 상태 로딩 중에는 깜빡임 방지를 위해 우측 영역을 비워둔다 */}
         {auth.loading ? null : auth.isAuthed ? (
           <>
@@ -155,7 +179,6 @@ window.TopNav = function TopNav({ active = "home", user = null }) {
               </span>
             )}
             <button className="icon-btn" aria-label="알림"><Icon name="bell" /></button>
-            <button className="icon-btn" aria-label="도움말"><Icon name="help" /></button>
             <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 8, borderLeft: "1px solid rgba(255,255,255,0.18)" }}>
               <span style={{ fontSize: 13, fontWeight: 600, color: "#fff" }}>
                 안녕하세요, {authDisplayName(auth.user)}님

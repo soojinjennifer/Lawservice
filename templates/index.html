@@ -32,6 +32,35 @@
     };
 </script>
 
+  <!-- ── 채널톡 고객 상담 SDK (플로팅 버튼 숨김, GNB 물음표 버튼으로만 진입) ── -->
+  <!-- Plugin Key 교체 위치: pluginKey 값 한 곳만 수정하면 됩니다 -->
+  <script>
+    (function () {
+      var w = window;
+      if (w.ChannelIO) { return w.console.error("ChannelIO script included twice."); }
+      var ch = function () { ch.c(arguments); };
+      ch.q = []; ch.c = function (args) { ch.q.push(args); };
+      w.ChannelIO = ch;
+      function l() {
+        if (w.ChannelIOInitialized) { return; }
+        w.ChannelIOInitialized = true;
+        var s = document.createElement("script");
+        s.type = "text/javascript"; s.async = true;
+        s.src = "https://cdn.channel.io/plugin/ch-plugin-web.js";
+        var x = document.getElementsByTagName("script")[0];
+        if (x.parentNode) { x.parentNode.insertBefore(s, x); }
+      }
+      if (document.readyState === "complete") { l(); }
+      else { w.addEventListener("DOMContentLoaded", l); w.addEventListener("load", l); }
+    })();
+
+    ChannelIO("boot", {
+      pluginKey: "07017a44-5465-41ad-b0ff-0d1c411f2988",
+      hideChannelButtonOnBoot: true,
+      language: "ko",
+    });
+  </script>
+
   <!-- React + JSX (CDN) -->
   <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
   <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
