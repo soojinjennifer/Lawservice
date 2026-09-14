@@ -464,22 +464,3 @@ def access_check():
         "isFreeTrialEligible": is_free_eligible,
         "revisionsRemaining": revisions_remaining,
     })
-
-
-# ── DEV ONLY: POST /api/dev/reset ────────────────────────────────
-@payment_bp.route("/api/dev/reset", methods=["POST"])
-def dev_reset():
-    """개발/테스트용 — 인메모리 결제·권한·수정횟수 데이터 전체 초기화.
-    프로덕션 환경(FLASK_ENV=production)에서는 비활성화."""
-    import os
-    if os.getenv("FLASK_ENV") == "production":
-        return jsonify({"error": "FORBIDDEN"}), 403
-
-    _PAYMENTS.clear()
-    _DOC_ACCESS.clear()
-    _ORDERS.clear()
-    return jsonify({
-        "ok": True,
-        "message": "인메모리 결제/권한/수정횟수 데이터가 초기화됐습니다.",
-        "cleared": ["_PAYMENTS", "_DOC_ACCESS", "_ORDERS"],
-    })

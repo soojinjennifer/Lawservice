@@ -18,15 +18,19 @@ AI 법률 문서 자동화 서비스 — Flask 백엔드
     http://localhost:5001
 """
 
+import hashlib
+import hmac
 import io
 import os
 import re
+import secrets
 from datetime import date, datetime
 
 from dotenv import load_dotenv
 load_dotenv(override=True)
 
 from flask import Flask, Response, jsonify, render_template, request, send_file, send_from_directory
+from werkzeug.security import safe_join
 import anthropic
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -306,6 +310,19 @@ def make_docx(text: str, title: str, watermark_text: str = None) -> bytes:
 # ── 증거자료 저장·명명 (PRD: 증거 자료 명기 및 저장) ──────────────
 EVIDENCE_DIR = os.path.join(BASE_DIR, "증거파일")
 
+# 증거 다운로드 링크 서명 키 — 파일명만 알아서는 내려받지 못하게 한다.
+# EVIDENCE_URL_SECRET 미설정 시 프로세스마다 임의 생성하므로 재시작하면 기존 링크는 무효가 된다.
+# gunicorn 워커를 2개 이상으로 늘릴 때는 워커 간 링크가 통하도록 같은 값을 설정해야 한다.
+_EVIDENCE_URL_SECRET = (os.environ.get("EVIDENCE_URL_SECRET") or "").encode() or secrets.token_bytes(32)
+
+
+def _evidence_token(filename: str, stat_result: os.stat_result) -> str:
+    """증거 파일 1개에 대한 다운로드 서명(HMAC-SHA256, hex).
+    저장 시각·크기를 함께 서명해, 같은 이름으로 나중에 저장된 다른 파일에는 기존 링크가 통하지 않게 한다."""
+    payload = f"{filename}\0{stat_result.st_mtime_ns}\0{stat_result.st_size}".encode("utf-8")
+    return hmac.new(_EVIDENCE_URL_SECRET, payload, hashlib.sha256).hexdigest()
+
+
 # 문서 종류별 증거번호 접두 (준비서면→갑, 반박문→을, 내용증명→첨부)
 EVIDENCE_PREFIX = {"brief": "갑", "rebuttal": "을", "notice": "첨부"}
 
@@ -454,7 +471,8 @@ def api_generate():
     # 영문 키(notice/brief/rebuttal)가 그대로 오는 경우 한글로 변환 (방어적 처리)
     _EN_TO_KOR = {"notice": "내용증명", "brief": "준비서면", "rebuttal": "상대방 반박문"}
     doc_type = _EN_TO_KOR.get(doc_type, doc_type)
-    if doc_type not in DOC_TEMPLATES:
+    # 판매 중인 3종(DOC_PRICES)만 생성한다. DOC_TEMPLATES의 나머지 종류는 결제 게이트를 거치지 않는다.
+    if doc_type not in DOC_TEMPLATES or _normalize_doc_type(doc_type) not in DOC_PRICES:
         return jsonify({"error": f"알 수 없는 문서 종류: {doc_type}"}), 400
     if not (data.get("facts") or "").strip():
         return jsonify({"error": "사건 경위(facts) 는 필수입니다."}), 400
@@ -735,7 +753,8 @@ def api_upload_evidence():
     # ── 저장 (폴더 없으면 생성, 중복 시 _2… 부여) ──
     os.makedirs(EVIDENCE_DIR, exist_ok=True)
     saved_filename = _unique_path(EVIDENCE_DIR, saved_filename)
-    with open(os.path.join(EVIDENCE_DIR, saved_filename), "wb") as out_f:
+    saved_path = os.path.join(EVIDENCE_DIR, saved_filename)
+    with open(saved_path, "wb") as out_f:
         out_f.write(raw)
 
     from urllib.parse import quote
@@ -746,15 +765,20 @@ def api_upload_evidence():
         "extractedDate": date_val,
         "label": label_val,
         "summary": summary_val,
-        "downloadUrl": "/api/download_evidence/" + quote(saved_filename),
+        "downloadUrl": "/api/download_evidence/" + quote(saved_filename) + "?t=" + _evidence_token(saved_filename, os.stat(saved_path)),
     })
 
 
 @app.route("/api/download_evidence/<path:filename>")
 def api_download_evidence(filename):
-    """저장된 증거 파일 다운로드. send_from_directory가 경로 이탈(path traversal)을 차단한다."""
-    if not os.path.isdir(EVIDENCE_DIR):
-        return jsonify({"error": "저장된 증거 파일이 없습니다."}), 404
+    """저장된 증거 파일 다운로드. 업로드 응답에서 발급한 서명(t)이 그 파일과 맞아야 한다.
+    safe_join·send_from_directory가 경로 이탈(path traversal)을 차단하고, 파일 존재 여부는 드러내지 않는다."""
+    token = request.args.get("t", "")
+    path = safe_join(EVIDENCE_DIR, filename)
+    if (not token or path is None or not os.path.isfile(path)
+            or not hmac.compare_digest(token.encode("utf-8"),
+                                       _evidence_token(filename, os.stat(path)).encode("utf-8"))):
+        return jsonify({"error": "FORBIDDEN", "message": "유효하지 않은 다운로드 링크입니다."}), 403
     return send_from_directory(EVIDENCE_DIR, filename, as_attachment=True)
 
 

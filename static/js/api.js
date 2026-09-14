@@ -91,10 +91,10 @@ window.LawAPI = {
     return data;
   },
 
-  // 증거 파일 다운로드 URL 생성
-  evidenceDownloadUrl(filename) {
-    if (!filename) return "";
-    return "/api/download_evidence/" + encodeURIComponent(filename);
+  // 증거 파일 다운로드 URL — 서버가 업로드 응답(downloadUrl)에 붙인 서명 링크만 유효하다.
+  // 파일명만으로는 링크를 만들 수 없으므로 빈 값을 돌려준다(링크가 없는 항목에는 다운로드 링크를 표시하지 않는다).
+  evidenceDownloadUrl() {
+    return "";
   },
 
   // POST /api/download_docx — triggers browser download
