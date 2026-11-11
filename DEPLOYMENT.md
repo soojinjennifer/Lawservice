@@ -23,7 +23,7 @@ gunicorn server:app --workers 1 --threads 4 --timeout 120 --graceful-timeout 30
 
 | 변수명 | 설명 | 비고 |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | Anthropic Claude API 키 | 누락 시 500 오류 |
+| `RUNYOUR_API_KEY` | Runyour API 키 (Claude 호출, `https://api.runyour.ai` 경유) | 누락 시 500 오류. 모델: `anthropic/claude-sonnet-5-5`, `anthropic/claude-haiku-5-5` (`server.py` 상단 상수) |
 | `SUPABASE_URL` | Supabase 프로젝트 URL | `https://` 포함 |
 | `SUPABASE_ANON_KEY` | Supabase anon 공개 키 | 브라우저 노출 허용 |
 | `SUPABASE_SERVICE_KEY` | Supabase service role 키 | **절대 프론트 노출 금지** |
@@ -68,9 +68,9 @@ gunicorn server:app --workers 1 --threads 4 --timeout 120 --graceful-timeout 30
 
 ### 오류 처리
 ```
-9. 환경변수에서 ANTHROPIC_API_KEY 임시 제거 → 배포
+9. 환경변수에서 RUNYOUR_API_KEY 임시 제거 → 배포
 10. 생성 시도 → "AI 문서 생성 설정이 완료되지 않았습니다." 메시지 확인
-11. ANTHROPIC_API_KEY 복원 → 재배포
+11. RUNYOUR_API_KEY 복원 → 재배포
 ```
 
 ---
@@ -83,7 +83,7 @@ Render 대시보드 → 서비스 선택 → **Logs** 탭
 |---|---|
 | `[generate] docType=... facts_len=...` | 요청 정상 수신 |
 | `[generate] Claude timeout` | 90초 초과 — 입력 줄이도록 안내 |
-| `[generate] Anthropic API key rejected` | `ANTHROPIC_API_KEY` 오류 |
+| `[generate] AI API key rejected (RUNYOUR_API_KEY)` | `RUNYOUR_API_KEY` 오류 |
 | `[generate] unexpected error` + stack trace | 예상 외 서버 오류 — stack trace로 원인 파악 |
 
 ---

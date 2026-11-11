@@ -51,6 +51,24 @@ from payment_routes import (
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# AI 호출은 Runyour(Anthropic Messages 호환)를 거친다. 키는 환경변수 RUNYOUR_API_KEY 로만 받는다.
+AI_BASE_URL = "https://api.runyour.ai"
+AI_MODEL = "anthropic/claude-sonnet-5-5"       # 문서 생성·수정·분석
+AI_MODEL_FAST = "anthropic/claude-haiku-5-5"   # 증거 날짜 추출
+
+
+def _ai_api_key():
+    return os.environ.get("RUNYOUR_API_KEY", "")
+
+
+def _ai_client(api_key, **kwargs):
+    return anthropic.Anthropic(api_key=api_key, base_url=AI_BASE_URL, **kwargs)
+
+
+def _resp_text(resp):
+    # 최신 모델은 응답 앞에 thinking 블록을 붙일 수 있으므로 text 블록만 모은다.
+    return "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
+
 app = Flask(
     __name__,
     template_folder=os.path.join(BASE_DIR, "templates"),
@@ -463,9 +481,9 @@ def serve_image(filename):
 @app.route("/api/generate", methods=["POST"])
 def api_generate():
     data = request.get_json(force=True)
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    api_key = _ai_api_key()
     if not api_key:
-        return jsonify({"error": "서버에 Anthropic API 키가 설정되지 않았습니다. .env 파일을 확인해 주세요."}), 500
+        return jsonify({"error": "서버에 AI API 키(RUNYOUR_API_KEY)가 설정되지 않았습니다. 환경변수를 확인해 주세요."}), 500
 
     doc_type = data.get("doc_type")
     # 영문 키(notice/brief/rebuttal)가 그대로 오는 경우 한글로 변환 (방어적 처리)
@@ -505,13 +523,13 @@ def api_generate():
         len((data.get("facts") or "")),
     )
     try:
-        client = anthropic.Anthropic(api_key=api_key, timeout=90.0, max_retries=1)
+        client = _ai_client(api_key, timeout=90.0, max_retries=1)
         resp = client.messages.create(
-            model="claude-sonnet-4-6",
+            model=AI_MODEL,
             max_tokens=8000,
             messages=[{"role": "user", "content": prompt}],
         )
-        draft = resp.content[0].text.strip()
+        draft = _resp_text(resp).strip()
         # 증거목록은 모델이 아닌 서버에서 결정적으로 1회 append (중복 방지)
         draft = append_evidence_section(draft, evidence_list)
         # FR-30/FR-28: 생성 성공 시 사용 횟수 기록 (환불 가능 여부 판단 기준)
@@ -525,7 +543,7 @@ def api_generate():
             "message": "생성 시간이 초과되었습니다. 입력 내용을 조금 줄이거나 다시 시도해주세요.",
         }), 504
     except anthropic.AuthenticationError:
-        app.logger.error("[generate] Anthropic API key rejected")
+        app.logger.error("[generate] AI API key rejected (RUNYOUR_API_KEY)")
         return jsonify({
             "error": "ANTHROPIC_KEY_MISSING",
             "message": "AI 문서 생성 설정이 완료되지 않았습니다. 관리자에게 문의해주세요.",
@@ -544,12 +562,116 @@ def api_generate():
         }), 500
 
 
+# ── /api/revise 헬퍼 ─────────────────────────────────────────
+# 문서 전체를 다시 쓰면 출력 토큰이 문서 길이만큼 늘어 수정 1회가 수십 초 걸린다.
+# 먼저 "바꿀 부분(find → replace)"만 받아 서버에서 적용하고,
+# 전체 재작성이 필요하거나 적용에 실패하면 기존 전체 재작성으로 fallback 한다.
+_REVISE_EDITS_TOOL = {
+    "name": "apply_edits",
+    "description": "법률 문서 초안에 적용할 부분 수정 목록을 제출한다.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "rewrite_all": {
+                "type": "boolean",
+                "description": "문서 대부분(전체 어조 변경, 전체 요약·재구성 등)을 바꿔야 하면 true. 이때 edits는 비워둔다.",
+            },
+            "edits": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "find": {"type": "string", "description": "원문에서 그대로 복사한, 원문에 정확히 한 번만 나오는 문자열"},
+                        "replace": {"type": "string", "description": "find를 대체할 새 문자열 (삭제면 빈 문자열)"},
+                    },
+                    "required": ["find", "replace"],
+                },
+            },
+        },
+        "required": ["rewrite_all", "edits"],
+    },
+}
+
+
+# 화면 빠른 제안 버튼 중 문서 전체를 바꾸는 요청 — 부분 수정 시도 없이 바로 전체 재작성
+_WHOLE_DOC_REVISIONS = {"더 강한 어조로", "더 정중한 표현으로", "단락 요약"}
+
+
+def _revise_with_edits(api_key, draft, revision_request):
+    """부분 수정 적용 결과를 반환. 전체 재작성이 필요하거나 적용할 수 없으면 None."""
+    if revision_request in _WHOLE_DOC_REVISIONS:
+        return None
+    prompt = f"""다음은 한국 법률 문서 초안입니다:
+
+<draft>
+{draft}
+</draft>
+
+사용자 수정 요청:
+{revision_request}
+
+수정 요청을 반영하기 위해 바꿔야 하는 부분만 반드시 apply_edits 도구를 호출해 제출하세요. 본문을 텍스트로 답하지 마세요.
+- find는 원문에서 글자·공백·줄바꿈까지 그대로 복사하고, 원문에 정확히 한 번만 나오도록 충분히 길게 잡으세요.
+- 수정 요청에 언급된 내용만 변경하고, 나머지는 건드리지 마세요.
+- 격식 있는 한국어 법률 문서 양식을 유지하고, 마크다운 기호(#, *, -, > 등)를 사용하지 마세요.
+- 문서 전체의 어조·표현 변경, 요약, 재구성처럼 세 문단 이상에 걸친 요청이면 rewrite_all을 true로 하고 edits는 비워두세요."""
+    # gunicorn --timeout 120 안에서 실패 시 전체 재작성(85초)까지 끝나도록 짧게 잡는다.
+    client = _ai_client(api_key, timeout=30.0, max_retries=0)
+    resp = client.messages.create(
+        model=AI_MODEL,
+        max_tokens=4000,
+        tools=[_REVISE_EDITS_TOOL],
+        # 강제 tool_choice는 Runyour 경유 시 응답이 멈춘다 (2026-11-11 확인) → auto 사용
+        tool_choice={"type": "auto"},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    if resp.stop_reason == "max_tokens":
+        return None
+    args = next((b.input for b in resp.content if getattr(b, "type", "") == "tool_use"), None)
+    if not isinstance(args, dict) or args.get("rewrite_all"):
+        return None
+    edits = args.get("edits") or []
+    if not edits:
+        return None
+    revised = draft
+    for ed in edits:
+        find = (ed or {}).get("find") or ""
+        if not find or revised.count(find) != 1:
+            app.logger.info("[revise] edit not applicable, fallback to full rewrite")
+            return None
+        revised = revised.replace(find, (ed or {}).get("replace") or "")
+    return revised.strip()
+
+
+def _revise_full(api_key, draft, revision_request):
+    """문서 전체를 다시 작성 (부분 수정이 불가능할 때)."""
+    prompt = f"""다음은 한국 법률 문서 초안입니다:
+
+{draft}
+
+사용자가 아래와 같이 수정을 요청했습니다:
+{revision_request}
+
+위 수정 요청을 반영하여 법률 문서 초안을 수정해주세요.
+- 수정 요청에 언급된 내용만 변경하고, 나머지는 원본을 그대로 유지하세요.
+- 격식 있는 한국어 법률 문서 양식을 유지하세요.
+- 마크다운 기호(#, *, -, > 등)를 사용하지 마세요.
+- 수정된 문서 전체를 반환해주세요."""
+    client = _ai_client(api_key, timeout=85.0, max_retries=0)
+    resp = client.messages.create(
+        model=AI_MODEL,
+        max_tokens=8000,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return _resp_text(resp).strip()
+
+
 @app.route("/api/revise", methods=["POST"])
 def api_revise():
     data = request.get_json(force=True)
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    api_key = _ai_api_key()
     if not api_key:
-        return jsonify({"error": "서버에 Anthropic API 키가 설정되지 않았습니다. .env 파일을 확인해 주세요."}), 500
+        return jsonify({"error": "서버에 AI API 키(RUNYOUR_API_KEY)가 설정되지 않았습니다. 환경변수를 확인해 주세요."}), 500
 
     draft = (data.get("draft") or "").strip()
     revision_request = (data.get("revision_request") or "").strip()
@@ -572,27 +694,18 @@ def api_revise():
                 "message": f"대화형 수정 횟수({rev['limit']}회)를 모두 사용하셨습니다.",
             }), 403
 
-    prompt = f"""다음은 한국 법률 문서 초안입니다:
-
-{draft}
-
-사용자가 아래와 같이 수정을 요청했습니다:
-{revision_request}
-
-위 수정 요청을 반영하여 법률 문서 초안을 수정해주세요.
-- 수정 요청에 언급된 내용만 변경하고, 나머지는 원본을 그대로 유지하세요.
-- 격식 있는 한국어 법률 문서 양식을 유지하세요.
-- 마크다운 기호(#, *, -, > 등)를 사용하지 마세요.
-- 수정된 문서 전체를 반환해주세요."""
-
     try:
-        client = anthropic.Anthropic(api_key=api_key)
-        resp = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=8000,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return jsonify({"draft": resp.content[0].text.strip()})
+        try:
+            revised = _revise_with_edits(api_key, draft, revision_request)
+        except anthropic.APITimeoutError:
+            app.logger.warning("[revise] edit mode timeout, fallback to full rewrite")
+            revised = None
+        if revised is None:
+            revised = _revise_full(api_key, draft, revision_request)
+        return jsonify({"draft": revised})
+    except anthropic.APITimeoutError:
+        app.logger.warning("[revise] Claude timeout: draft_len=%d", len(draft))
+        return jsonify({"error": "수정 시간이 초과되었습니다. 요청을 나눠서 다시 시도해주세요."}), 504
     except Exception as e:
         return jsonify({"error": f"Claude 호출 실패: {e}"}), 500
 
@@ -605,9 +718,9 @@ def suggest_strategies():
     if not draft:
         return jsonify({"error": "초안이 없습니다"}), 400
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    api_key = _ai_api_key()
     if not api_key:
-        return jsonify({"error": "서버에 Anthropic API 키가 설정되지 않았습니다. .env 파일을 확인해 주세요."}), 500
+        return jsonify({"error": "서버에 AI API 키(RUNYOUR_API_KEY)가 설정되지 않았습니다. 환경변수를 확인해 주세요."}), 500
 
     prompt = f"""다음 법률 문서 초안을 분석하여 설득력을 높일 수 있는 전략 2가지를 제안해주세요.
 
@@ -625,14 +738,14 @@ def suggest_strategies():
 JSON만 반환하고 다른 텍스트는 포함하지 마세요."""
 
     try:
-        client = anthropic.Anthropic(api_key=api_key)
+        client = _ai_client(api_key)
         resp = client.messages.create(
-            model="claude-sonnet-4-6",
+            model=AI_MODEL,
             max_tokens=500,
             messages=[{"role": "user", "content": prompt}],
         )
         import json as _json, re as _re
-        raw = resp.content[0].text.strip()
+        raw = _resp_text(resp).strip()
         # Claude가 ```json ... ``` 블록으로 감싸 반환하는 경우 제거
         raw = _re.sub(r'^```(?:json)?\s*', '', raw)
         raw = _re.sub(r'\s*```$', '', raw).strip()
@@ -701,7 +814,7 @@ def api_upload_evidence():
 
     # ── AI 추출 (날짜·자료명·요약) — 실패해도 폴백으로 진행 ──
     date_val, label_val, summary_val = None, "", ""
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    api_key = _ai_api_key()
     if api_key:
         try:
             import base64, json as _json
@@ -720,13 +833,13 @@ def api_upload_evidence():
                 ]
             else:
                 content = [{"type": "text", "text": f"파일명: {filename}\n{instr}"}]
-            client = anthropic.Anthropic(api_key=api_key)
+            client = _ai_client(api_key)
             resp = client.messages.create(
-                model="claude-haiku-4-5-20251001",
+                model=AI_MODEL_FAST,
                 max_tokens=300,
                 messages=[{"role": "user", "content": content}],
             )
-            raw_text = resp.content[0].text.strip()
+            raw_text = _resp_text(resp).strip()
             try:
                 parsed = _json.loads(raw_text)
             except Exception:
@@ -793,7 +906,7 @@ def api_analyze_opponent():
     if not doc_text.strip():
         return jsonify({"error": "분석할 문서 내용이 없습니다."}), 400
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    api_key = _ai_api_key()
     if not api_key:
         return jsonify({"error": "API 키 미설정"}), 500
 
@@ -819,14 +932,14 @@ def api_analyze_opponent():
 }}"""
 
     try:
-        client = anthropic.Anthropic(api_key=api_key)
+        client = _ai_client(api_key)
         resp = client.messages.create(
-            model="claude-sonnet-4-6",
+            model=AI_MODEL,
             max_tokens=2000,
             messages=[{"role": "user", "content": prompt}],
         )
         import json as _json
-        raw_text = resp.content[0].text.strip()
+        raw_text = _resp_text(resp).strip()
         try:
             result = _json.loads(raw_text)
         except Exception:

@@ -615,7 +615,7 @@ function StepPreview({ docType, draftText, generating, genError, onBack, onNext,
 }
 
 // ── STEP 3: 대화형 수정 및 저장 ──────────────────────────────
-function StepEdit({ docType, draftText, setDraftText, onBack, onDownload, onRegenerate, pendingRevision, onPendingRevisionHandled, evidenceList = [] }) {
+function StepEdit({ docType, draftText, setDraftText, onRevised, onBack, onDownload, onRegenerate, pendingRevision, onPendingRevisionHandled, evidenceList = [] }) {
   // 내편 전략 제안 모달 (Step 3 — 전략 선택 후 바로 sendRevision 호출)
   const onStrategyPropose = (sendRevisionFn) => {
     window.AppModal.open({
@@ -644,6 +644,14 @@ function StepEdit({ docType, draftText, setDraftText, onBack, onDownload, onRege
   const [currentDraft, setCurrentDraft] = React.useState(draftText);
   // 수정으로 변경된 줄을 강조한 HTML (없으면 plain text 렌더) — FR-24
   const [highlightedDraft, setHighlightedDraft] = React.useState("");
+  // 부모 draftText가 나중에 바뀌면(마이페이지 "이어서 수정"의 DB 복원 등) 편집 본문도 따라간다.
+  // 수정 직후에는 두 값이 같으므로 변경 강조 표시는 유지된다.
+  React.useEffect(() => {
+    if (draftText !== currentDraft) {
+      setCurrentDraft(draftText);
+      setHighlightedDraft("");
+    }
+  }, [draftText]);
   const chatBodyRef = React.useRef(null);
   const meta = DocTypeMeta(docType);
 
@@ -665,6 +673,7 @@ function StepEdit({ docType, draftText, setDraftText, onBack, onDownload, onRege
       setHighlightedDraft(buildHighlightedDraft(currentDraft, revised));
       setCurrentDraft(revised);
       setDraftText(revised);
+      if (onRevised) onRevised(revised);
 
       if (isPaid) {
         setMessages(m => [...m, {
@@ -1133,24 +1142,48 @@ window.CreateScreen = function CreateScreen({ initialStep = 1, initialDocType = 
   const handleEvidenceRemove = (i) => setEvidenceFiles(prev => prev.filter((_, idx) => idx !== i));
 
   // ── URL doc_id로 기존 문서 복원 (로그인 상태에서만) ─────────────
+  const revisionCountRef = React.useRef(0);
   React.useEffect(() => {
     const docId = getDocIdFromUrl();
     if (!docId) return;
-    const userId = window.AuthStore?.getUserId?.();
-    if (!userId) return;
-    (async () => {
+    const restore = async () => {
       try {
         const doc = await window.LawAPI.documents.get(docId);
         setDocumentId(doc.id);
         setDocStatus(doc.status || "draft");
+        if (doc.doc_type) setDocType(doc.doc_type);
+        revisionCountRef.current = doc.revision_count || 0;
         if (doc.input_data) setFormData(doc.input_data);
         if (doc.draft_text) setDraftText(doc.draft_text);
         setStep(Math.min(Math.max(doc.current_step || 1, 1), 3));
       } catch (e) {
         console.error("[DB] 문서 복원 실패, sessionStorage fallback:", e.message);
       }
-    })();
+    };
+    if (window.AuthStore?.getUserId?.()) {
+      restore();
+      return;
+    }
+    // 새로고침 직후에는 로그인 세션 복원이 끝나기 전이라 user id가 비어 있다 → 세션이 잡히면 1회 복원
+    if (!window.AuthStore?.onAuthStateChange) return;
+    let done = false;
+    const unsubscribe = window.AuthStore.onAuthStateChange((_event, session) => {
+      if (done || !session?.user) return;
+      done = true;
+      restore();
+    });
+    return () => { done = true; unsubscribe(); };
   }, []); // mount 1회
+
+  // AI 수정 결과를 DB에 저장 (마이페이지 "이어서 수정" 시 최신 본문·수정 횟수 표시)
+  const persistRevision = (text) => {
+    if (!documentId) return;
+    revisionCountRef.current += 1;
+    window.LawAPI.documents.update(documentId, {
+      draft_text: text,
+      revision_count: revisionCountRef.current,
+    }).catch(e => console.error("[DB] 수정본 저장 실패:", e.message));
+  };
 
   // ── Chat state — Step2·3 공유 (StepEdit에서 CreateScreen으로 lift) ────
   const QUICK_SUGGESTIONS = ["더 강한 어조로", "더 정중한 표현으로", "법조항 인용 추가", "단락 요약"];
@@ -1167,6 +1200,7 @@ window.CreateScreen = function CreateScreen({ initialStep = 1, initialDocType = 
     try {
       const revised = await window.LawAPI.revise({ draft: draftText, revisionRequest: userMsg, docType });
       setDraftText(revised);
+      persistRevision(revised);
       setChatMessages(m => [...m, { role: "ai", text: "수정이 완료되었습니다. 미리보기에서 변경 내용을 확인해 주세요." }]);
       if (!isPaid) AuthStore.deductTrialRevision().catch(() => {});
     } catch (e) {
@@ -1485,6 +1519,7 @@ window.CreateScreen = function CreateScreen({ initialStep = 1, initialDocType = 
               docType={docType}
               draftText={draftText}
               setDraftText={setDraftText}
+              onRevised={persistRevision}
               evidenceList={(formData && formData.evidence_list) || []}
               pendingRevision={pendingRevision}
               onPendingRevisionHandled={() => setPendingRevision(null)}
